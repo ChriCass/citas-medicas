@@ -1,6 +1,6 @@
-# Conexión de Laravel a Microsoft SQL Server (XAMPP / Windows)
+# Instrucciones Basicas para configuracion de PHP(XAMPP) + SQL Server
 
-Guía breve para conectar un proyecto **Laravel** a **Microsoft SQL Server** en Windows usando XAMPP.
+Guía breve para conectar nuestro proyecto con Microsoft SQL Server en Windows usando XAMPP.
 
 ---
 
@@ -39,24 +39,9 @@ Es **forzoso** descargar e instalar los drivers de Microsoft para PHP (SQLSRV/PD
 
 > Si usas instancia nombrada (p. ej. `SQLEXPRESS`), normalmente deja `DB_PORT` vacío. Si usas puerto fijo **1433**, puedes optar por `DB_HOST=127.0.0.1` y `DB_PORT=1433`.
 
----
+ 
 
-## 4) Ejecutar comandos (en este orden)
-Después de completar la configuración anterior, corre los siguientes comandos desde la raíz del proyecto:
-
-```bash
-php artisan key:generate
-php artisan migrate
-php artisan serve
-```
-
-- `key:generate`: crea la clave de aplicación en `.env`.
-- `migrate`: crea/actualiza las tablas base.
-- `serve`: levanta el servidor de desarrollo en `http://127.0.0.1:8000`.
-
----
-
-## 5) Verificación rápida / Solución de problemas
+## 4) Verificación rápida / Solución de problemas
 - **No encuentra el driver (`could not find driver`)**: revisa que copiaste **los DLL correctos** en `ext`, que coinciden con tu versión de PHP (8.1/8.2/8.3), **x64**, y **TS/NTS**; y que están habilitados en `php.ini`.
 - **Mensajes de “Unable to initialize module / Module API mismatch”**: estás usando DLL de **otra versión** de PHP. Descarga los que correspondan **exactamente** a tu versión.
 - **La instancia no conecta**: habilita **TCP/IP** en *SQL Server Configuration Manager*; si usas `SQLEXPRESS`, prueba `EQUIPO\SQLEXPRESS` con `DB_PORT` vacío o fija `1433`.
