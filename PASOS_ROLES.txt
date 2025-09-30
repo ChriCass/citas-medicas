@@ -1,0 +1,29 @@
+PASOS RÁPIDOS
+1) Copia .env.example a .env y ajusta DB_CONNECTION (mysql o sqlsrv) y credenciales.
+2) Ejecuta sql/mysql/schema.sql (MySQL) o sql/sqlserver/schema.sql (SQL Server).
+3) composer dump-autoload
+4) php -S localhost:8000 -t public
+5) Ingresa con usuarios demo (password: password).
+
+REGLAS
+- Superadmin: ver y crear citas (/citas/create)
+- Doctor: ver todas; no crea / no cambia status
+- Patient: ver solo sus citas; no crea / no cambia status
+- Cashier: ver todas y cambiar status (pendiente/confirmado/cancelado)
+
+
+# PHP MVC Scaffolding — Roles + MySQL/SQL Server
+Actualizado: 2025-09-28 04:59
+- MVC, Web/API, Auth + CSRF
+- Roles: superadmin, doctor, patient, cashier
+- Dual DB: MySQL (phpMyAdmin) y SQL Server (pdo_sqlsrv)
+- Citas: crear (solo superadmin), ver (doctor ve todas; patient solo las suyas), cambiar status (solo cashier)
+
+Usuarios demo (password: **password**)
+- super@demo.local (superadmin)
+- doctor@demo.local (doctor)
+- paciente@demo.local (patient)
+- cajero@demo.local (cashier)
+
+
+PARA CONFIGURACION, PRIMERO LEER README.MD

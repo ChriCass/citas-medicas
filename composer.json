@@ -1,0 +1,10 @@
+{
+  "name": "acme/php-mvc-scaffolding-roles",
+  "description": "Scaffold PHP (MVC) con roles y MySQL/SQL Server",
+  "type": "project",
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/"
+    }
+  }
+}
