@@ -1,6 +1,6 @@
 # Instrucciones Basicas para configuracion de PHP(XAMPP) + SQL Server
 
-Guía breve para conectar nuestro proyecto con Microsoft SQL Server en Windows usando XAMPP.
+Guía breve para conectar nuestro proyecto con Microsoft SQL Server en Windows usando XAMPP. (ES IMPORTANTE LEER ESTO PRIMERO PARA EVITAR DISCREPANCIAS)
 
 ---
 
@@ -51,3 +51,6 @@ Es **forzoso** descargar e instalar los drivers de Microsoft para PHP (SQLSRV/PD
 ### Notas
 - Si utilizas **Windows Authentication** (sin usuario/clave en `.env`), la cuenta de Windows bajo la que corre PHP/Apache/IIS debe tener **login y permisos** sobre la base de datos en SQL Server.
 - Si utilizas usuario SQL (p. ej. `sa`), mantén `DB_USERNAME` y `DB_PASSWORD` configurados en `.env`.
+
+
+
