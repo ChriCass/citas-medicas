@@ -83,9 +83,9 @@ tbody tr:hover td { background: rgba(102,191,191,.06); }
   display:inline-flex; align-items:center; gap:8px; padding:4px 10px; border-radius:999px;
   font-size:.85rem; border:1px solid transparent; background: rgba(102,191,191,.12); color: var(--text);
 }
-.chip.status-pending   { background: rgba(102,191,191,.12); border-color: rgba(102,191,191,.35); }
-.chip.status-confirmed { background: rgba(102,191,191,.20); border-color: rgba(102,191,191,.45); }
-.chip.status-cancelled { background: rgba(255,0,99,.12);  border-color: rgba(255,0,99,.45); color: #8A0C3A; }
+.chip.status-pendiente   { background: rgba(102,191,191,.12); border-color: rgba(102,191,191,.35); }
+.chip.status-confirmado { background: rgba(102,191,191,.20); border-color: rgba(102,191,191,.45); }
+.chip.status-cancelado { background: rgba(255,0,99,.12);  border-color: rgba(255,0,99,.45); color: #8A0C3A; }
 
 /* ===== Layout público simple (sin login) ===== */
 .nav { border-bottom: 1px solid var(--border); background: var(--panel); }

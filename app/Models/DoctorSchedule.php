@@ -8,13 +8,14 @@ class DoctorSchedule
     /** Lista completa con joins (para el index) */
     public static function listAll(): array
     {
-        $sql = "SELECT ds.*,
-                       u.name AS doctor_name, u.email AS doctor_email,
-                       l.name AS location_name
-                FROM horarios_doctores ds
-                JOIN usuarios u ON u.id = ds.doctor_id
-                JOIN ubicaciones l ON l.id = ds.location_id
-                ORDER BY ds.weekday ASC, ds.start_time ASC";
+        $sql = "SELECT h.*,
+                       u.nombre AS doctor_name, u.apellido AS doctor_lastname, u.email AS doctor_email,
+                       s.nombre_sede AS sede_nombre
+                FROM horarios h
+                JOIN doctores d ON d.id = h.doctor_id
+                JOIN usuarios u ON u.id = d.usuario_id
+                LEFT JOIN sedes s ON s.id = h.sede_id
+                ORDER BY h.dia_semana ASC, h.hora_inicio ASC";
         return Database::pdo()->query($sql)->fetchAll();
     }
 
@@ -22,11 +23,11 @@ class DoctorSchedule
     public static function for(int $doctorId, int $locationId, int $weekday): array
     {
         $st = Database::pdo()->prepare(
-            'SELECT * FROM horarios_doctores
-             WHERE doctor_id=:d AND location_id=:l AND weekday=:w AND is_active=1
-             ORDER BY start_time ASC'
+            'SELECT * FROM horarios
+             WHERE doctor_id = :d AND (sede_id = :s OR (:s = 0 AND sede_id IS NULL)) AND dia_semana = :w
+             ORDER BY hora_inicio ASC'
         );
-        $st->execute(['d'=>$doctorId,'l'=>$locationId,'w'=>$weekday]);
+        $st->execute(['d'=>$doctorId,'s'=>$locationId,'w'=>$weekday]);
         return $st->fetchAll() ?: [];
     }
 
@@ -34,17 +35,17 @@ class DoctorSchedule
     public static function create(int $doctorId, int $locationId, int $weekday, string $start, string $end, int $active=1): int
     {
         $st = Database::pdo()->prepare(
-            'INSERT INTO horarios_doctores(doctor_id,location_id,weekday,start_time,end_time,is_active)
-             VALUES (:d,:l,:w,:s,:e,:a)'
+            'INSERT INTO horarios(doctor_id, sede_id, dia_semana, hora_inicio, hora_fin)
+             VALUES (:d, :s, :w, :start, :end)'
         );
-        $st->execute(['d'=>$doctorId,'l'=>$locationId,'w'=>$weekday,'s'=>$start,'e'=>$end,'a'=>$active]);
+        $st->execute(['d'=>$doctorId,'s'=>$locationId ?: null,'w'=>$weekday,'start'=>$start,'end'=>$end]);
         return (int)Database::pdo()->lastInsertId();
     }
 
     /** Elimina un horario */
     public static function delete(int $id): bool
     {
-        $st = Database::pdo()->prepare('DELETE FROM horarios_doctores WHERE id=:id');
+        $st = Database::pdo()->prepare('DELETE FROM horarios WHERE id=:id');
         return $st->execute(['id'=>$id]);
     }
 
@@ -52,12 +53,11 @@ class DoctorSchedule
     public static function overlaps(int $doctorId, int $locationId, int $weekday, string $start, string $end): bool
     {
         $st = Database::pdo()->prepare(
-            "SELECT 1 FROM horarios_doctores
-             WHERE doctor_id=:d AND location_id=:l AND weekday=:w
-               AND NOT (end_time <= :s OR start_time >= :e)
-             LIMIT 1"
+            "SELECT 1 FROM horarios
+             WHERE doctor_id = :d AND (sede_id = :s OR (:s = 0 AND sede_id IS NULL)) AND dia_semana = :w
+               AND NOT (hora_fin <= :start OR hora_inicio >= :end)"
         );
-        $st->execute(['d'=>$doctorId,'l'=>$locationId,'w'=>$weekday,'s'=>$start,'e'=>$end]);
+        $st->execute(['d'=>$doctorId,'s'=>$locationId,'w'=>$weekday,'start'=>$start,'end'=>$end]);
         return (bool)$st->fetchColumn();
     }
 }

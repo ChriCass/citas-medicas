@@ -1,25 +1,71 @@
 <!doctype html>
 <?php
-  // Sesión / rol / ruta activa
+  // Sesión
   $auth = $_SESSION['user'] ?? null;
-  $role = $auth['role'] ?? null;
+
+  // ===== Normalización de rol =====
+  $role = null;
+  if ($auth) {
+    $candidates = [
+      $auth['rol']        ?? null,
+      $auth['role']       ?? null,
+      $auth['role_slug']  ?? null,
+    ];
+
+    // Si viene como arreglo de roles (roles/tiene_roles)
+    if (empty(array_filter($candidates))) {
+      $roleArrays = [];
+      if (!empty($auth['roles']) && is_array($auth['roles']))        $roleArrays[] = $auth['roles'];
+      if (!empty($auth['tiene_roles']) && is_array($auth['tiene_roles'])) $roleArrays[] = $auth['tiene_roles'];
+
+      foreach ($roleArrays as $arr) {
+        $first = $arr[0] ?? [];
+        $candidates[] = $first['slug'] ?? $first['nombre'] ?? $first['name'] ?? null;
+      }
+    }
+
+    foreach ($candidates as $cand) {
+      if (is_string($cand) && $cand !== '') { $role = mb_strtolower($cand); break; }
+    }
+
+    // Mapeo de sinónimos/español→inglés si aplica
+    $map = [
+      'paciente'   => 'patient',
+      'cajero'     => 'cashier',
+      'super'      => 'superadmin',
+      'administrador' => 'superadmin',
+    ];
+    if ($role && isset($map[$role])) $role = $map[$role];
+  }
+
+  // ===== Nombre para mostrar (nombre+apellido | name | email) =====
+  $fullName = '';
+  if ($auth) {
+    $n = trim(($auth['nombre'] ?? '') . ' ' . ($auth['apellido'] ?? ''));
+    $fullName = $n !== '' ? $n : ($auth['name'] ?? ($auth['nombre_completo'] ?? ($auth['email'] ?? '')));
+  }
+
+  // Ruta activa
   $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
   $isActive = function (string $p) use ($path) {
       return rtrim($path,'/') === rtrim($p,'/');
   };
+
+  // Helpers de rol
+  $isSuper   = in_array($role, ['superadmin'], true);
+  $isCashier = in_array($role, ['cashier','cajero'], true);
 ?>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?= isset($title) ? htmlspecialchars($title) : 'App' ?></title>
-  <!-- Forza cache bust si cambiaste tu CSS -->
   <link rel="stylesheet" href="/assets/styles.css?v=palette-teal-ff0063" />
 </head>
 
 <body class="<?= $auth ? 'with-sidebar' : 'no-auth' ?>">
 <?php if ($auth): ?>
-  <!-- ===== SIDEBAR (solo si hay sesión) ===== -->
+  <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar" data-collapsed="false" aria-label="Barra lateral de navegación">
     <div class="sb-header">
       <button class="sb-toggle" id="sbToggle" aria-label="Colapsar menú" title="Colapsar menú">☰</button>
@@ -27,7 +73,7 @@
     </div>
 
     <div class="sb-user" role="region" aria-label="Usuario actual">
-      <div class="sb-user-name"><?= htmlspecialchars($auth['name'] ?? '') ?></div>
+      <div class="sb-user-name"><?= htmlspecialchars($fullName) ?></div>
       <div class="sb-user-role sb-user-role badge"><?= htmlspecialchars($role ?? '-') ?></div>
     </div>
 
@@ -35,13 +81,13 @@
       <a href="/dashboard" class="sb-link <?= $isActive('/dashboard') ? 'active':'' ?>">🏠 Dashboard</a>
       <a href="/citas" class="sb-link <?= $isActive('/citas') ? 'active':'' ?>">📅 Citas</a>
 
-      <?php if ($role === 'superadmin'): ?>
+      <?php if ($isSuper): ?>
         <a href="/citas/create" class="sb-link <?= $isActive('/citas/create') ? 'active':'' ?>">➕ Reservar cita</a>
         <a href="/doctor-schedules" class="sb-link <?= $isActive('/doctor-schedules') ? 'active':'' ?>">🕑 Horarios Doctores</a>
       <?php endif; ?>
 
-      <?php if ($role === 'cashier'): ?>
-        <!-- Enlace opcional para cajero; actualmente el listado de citas ya permite cambiar estado/pago -->
+      <?php if ($isCashier): ?>
+        <!-- Enlace opcional para cajero -->
         <!-- <a href="/billing" class="sb-link <?= $isActive('/billing') ? 'active':'' ?>">💳 Caja</a> -->
       <?php endif; ?>
     </nav>
@@ -67,7 +113,7 @@
   </div>
 
   <script>
-    // Toggle de sidebar con persistencia en localStorage
+    // Toggle de sidebar con persistencia
     const sidebar = document.querySelector('.sidebar');
     const btns = [document.getElementById('sbToggle'), document.getElementById('sbToggleMobile')];
 
@@ -105,6 +151,7 @@
   <main class="container" role="main">
     <?= $content ?? '' ?>
   </main>
+  
 <?php endif; ?>
 </body>
 </html>

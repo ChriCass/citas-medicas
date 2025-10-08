@@ -1,7 +1,7 @@
 <?php
-// Espera $title, $doctors, $ubicaciones, $error (opcional) y $old (opcional)
+// Espera $title, $doctors, $sedes, $error (opcional) y $old (opcional)
 // El rol ya lo valida el middleware/controlador; si igual quieres bloquear:
-$role = $_SESSION['user']['role'] ?? '';
+$role = $_SESSION['user']['rol'] ?? '';
 ?>
 <?php if ($role !== 'superadmin'): ?>
   <div class="alert">No tienes acceso a esta pantalla.</div>
@@ -23,19 +23,19 @@ $role = $_SESSION['user']['role'] ?? '';
       <option value="">— Selecciona —</option>
       <?php foreach (($doctors ?? []) as $d): ?>
         <option value="<?= (int)$d['id'] ?>" <?= (!empty($old['doctor_id']) && (int)$old['doctor_id']===(int)$d['id'])? 'selected':'' ?>>
-          <?= htmlspecialchars($d['name']) ?> — <?= htmlspecialchars($d['email']) ?>
+          <?= htmlspecialchars(($d['nombre'] ?? '').' '.($d['apellido'] ?? '')) ?> — <?= htmlspecialchars($d['email'] ?? '') ?>
         </option>
       <?php endforeach; ?>
     </select>
   </div>
 
   <div class="row">
-    <label class="label" for="location_id">Sede</label>
-    <select name="location_id" id="location_id" class="input" required>
+    <label class="label" for="sede_id">Sede</label>
+    <select name="sede_id" id="sede_id" class="input">
       <option value="">— Selecciona —</option>
-      <?php foreach (($ubicaciones ?? []) as $l): ?>
-        <option value="<?= (int)$l['id'] ?>" <?= (!empty($old['location_id']) && (int)$old['location_id']===(int)$l['id'])? 'selected':'' ?>>
-          <?= htmlspecialchars($l['name']) ?>
+      <?php foreach (($sedes ?? []) as $s): ?>
+        <option value="<?= (int)$s['id'] ?>" <?= (!empty($old['sede_id']) && (int)$old['sede_id']===(int)$s['id'])? 'selected':'' ?>>
+          <?= htmlspecialchars($s['nombre_sede'] ?? '') ?>
         </option>
       <?php endforeach; ?>
     </select>

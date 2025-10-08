@@ -23,10 +23,19 @@
   <form method="POST" action="/register" style="display: flex; flex-direction: column; gap: 1rem;">
     <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
 
-    <input name="name" type="text" placeholder="Nombre" required
+    <input name="nombre" type="text" placeholder="Nombre" required
+           style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
+
+    <input name="apellido" type="text" placeholder="Apellido"
            style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
 
     <input name="email" type="email" placeholder="Email" required
+           style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
+
+    <input name="dni" type="text" placeholder="DNI"
+           style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
+
+    <input name="telefono" type="tel" placeholder="Teléfono"
            style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
 
     <input name="password" type="password" placeholder="Contraseña" required

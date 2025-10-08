@@ -1,4 +1,4 @@
-<?php $role = $_SESSION['user']['role'] ?? ''; ?>
+<?php $role = $_SESSION['user']['rol'] ?? ''; ?>
 <?php if ($role !== 'superadmin'): ?>
   <div class="alert mt-2">No tienes acceso a esta pantalla.</div>
 <?php else: ?>
@@ -12,11 +12,11 @@
   <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
 
   <div class="row">
-    <label class="label" for="patient_id">Paciente</label>
-    <select class="input" name="patient_id" id="patient_id">
+    <label class="label" for="paciente_id">Paciente</label>
+    <select class="input" name="paciente_id" id="paciente_id">
       <option value="">— Para mí (superadmin) —</option>
-      <?php foreach (($patients ?? []) as $p): ?>
-        <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars($p['name']) ?> — <?= htmlspecialchars($p['email']) ?></option>
+      <?php foreach (($pacientes ?? []) as $p): ?>
+        <option value="<?= (int)$p['id'] ?>"><?= htmlspecialchars(($p['nombre'] ?? '').' '.($p['apellido'] ?? '')) ?> — <?= htmlspecialchars($p['email'] ?? '') ?></option>
       <?php endforeach; ?>
     </select>
   </div>
@@ -25,31 +25,23 @@
     <label class="label" for="doctor_id">Doctor</label>
     <select class="input" name="doctor_id" id="doctor_id" required>
       <option value="">— Selecciona un doctor —</option>
-      <?php foreach (($doctors ?? []) as $d): ?>
-        <option value="<?= (int)$d['id'] ?>"><?= htmlspecialchars($d['name']) ?> — <?= htmlspecialchars($d['email']) ?></option>
+      <?php foreach (($doctores ?? []) as $d): ?>
+        <option value="<?= (int)$d['id'] ?>"><?= htmlspecialchars(($d['nombre'] ?? '').' '.($d['apellido'] ?? '')) ?> — <?= htmlspecialchars($d['email'] ?? '') ?></option>
       <?php endforeach; ?>
     </select>
   </div>
 
   <div class="row">
-    <label class="label" for="location_id">Sede</label>
-    <select class="input" name="location_id" id="location_id" required>
+    <label class="label" for="sede_id">Sede</label>
+    <select class="input" name="sede_id" id="sede_id">
       <option value="">— Selecciona una sede —</option>
-      <?php foreach (($ubicaciones ?? []) as $l): ?>
-        <option value="<?= (int)$l['id'] ?>"><?= htmlspecialchars($l['name']) ?></option>
+      <?php foreach (($sedes ?? []) as $s): ?>
+        <option value="<?= (int)$s['id'] ?>"><?= htmlspecialchars($s['nombre_sede'] ?? '') ?></option>
       <?php endforeach; ?>
     </select>
   </div>
 
-  <div class="row">
-    <label class="label" for="service_id">Servicio</label>
-    <select class="input" name="service_id" id="service_id" required>
-      <?php foreach (($servicios ?? []) as $s): ?>
-        <option value="<?= (int)$s['id'] ?>"><?= htmlspecialchars($s['name']) ?> (15 min)</option>
-      <?php endforeach; ?>
-    </select>
-    <small class="hint">Todas las citas son de 15 minutos.</small>
-  </div>
+  <small class="hint">Todas las citas son de 15 minutos.</small>
 
   <div class="row">
     <label class="label" for="date">Fecha</label>
@@ -74,13 +66,13 @@
 <script>
 async function loadSlots(){
   const d = document.getElementById('doctor_id').value;
-  const l = document.getElementById('location_id').value;
+  const l = document.getElementById('sede_id').value;
   const date = document.getElementById('date').value;
   const sel = document.getElementById('time');
   sel.innerHTML = '';
-  if (!d || !l || !date) return;
+  if (!d || !date) return;
   try{
-    const res = await fetch(`/api/v1/slots?date=${encodeURIComponent(date)}&doctor_id=${encodeURIComponent(d)}&location_id=${encodeURIComponent(l)}`);
+    const res = await fetch(`/api/v1/slots?date=${encodeURIComponent(date)}&doctor_id=${encodeURIComponent(d)}&location_id=${encodeURIComponent(l||0)}`);
     const data = await res.json();
     (data.slots || []).forEach(h => {
       const o = document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o);
@@ -92,7 +84,7 @@ async function loadSlots(){
     const o=document.createElement('option'); o.value=''; o.textContent='Error'; sel.appendChild(o);
   }
 }
-['doctor_id','location_id','date'].forEach(id => document.getElementById(id).addEventListener('change', loadSlots));
+['doctor_id','sede_id','date'].forEach(id => document.getElementById(id).addEventListener('change', loadSlots));
 window.addEventListener('DOMContentLoaded', loadSlots);
 </script>
 <?php endif; ?>
