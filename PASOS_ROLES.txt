@@ -1,6 +1,7 @@
 PASOS RÁPIDOS
 1) Copia .env.example a .env y ajusta DB_CONNECTION (mysql o sqlsrv) y credenciales.
-2) Ejecuta sql/mysql/schema.sql (MySQL) o sql/sqlserver/schema.sql (SQL Server).
+2) ejecuta el backup med_database_v5.bak en tu sqlserver , Y UTILIZA LOS INSERTS DEL ARCHIVO DENTRO DE SQLSERVER_ESPAÑOL -> schema.sql 
+para efectos de comprobar la insersion de data.
 3) composer dump-autoload
 4) php -S localhost:8000 -t public
 5) Ingresa con usuarios demo (password: password).
