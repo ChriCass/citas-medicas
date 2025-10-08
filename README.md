@@ -1,5 +1,5 @@
 # PHP MVC Scaffolding — Roles + MySQL/SQL Server
-Actualizado: 2025-09-28 04:59
+
 - MVC, Web/API, Auth + CSRF
 - Roles: superadmin, doctor, patient, cashier
 - Dual DB: MySQL (phpMyAdmin) y SQL Server (pdo_sqlsrv)
