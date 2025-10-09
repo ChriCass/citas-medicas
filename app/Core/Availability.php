@@ -13,25 +13,33 @@ class Availability
      */
     public static function slotsForDate(\DateTimeImmutable $date, int $doctorId, int $locationId): array
     {
-        $weekday = (int)$date->format('w'); // 0..6
-        $schedules = DoctorSchedule::for($doctorId, $locationId, $weekday);
+        $dateString = $date->format('Y-m-d');
+        $schedules = DoctorSchedule::forDate($doctorId, $locationId, $dateString);
         if (!$schedules) return [];
 
         $slots = [];
-        [$y,$m,$d] = [$date->format('Y'), $date->format('m'), $date->format('d')];
+        $now = new \DateTimeImmutable();
+        
         foreach ($schedules as $sch) {
-            $start = new \DateTimeImmutable("$y-$m-$d {$sch['start_time']}");
-            $end   = new \DateTimeImmutable("$y-$m-$d {$sch['end_time']}");
+            // Limpiar los microsegundos de las horas obtenidas de SQL Server
+            $startTimeClean = substr($sch['hora_inicio'], 0, 8); // "08:00:00.0000000" -> "08:00:00"
+            $endTimeClean = substr($sch['hora_fin'], 0, 8);       // "12:00:00.0000000" -> "12:00:00"
+            
+            $start = new \DateTimeImmutable($dateString . ' ' . $startTimeClean);
+            $end   = new \DateTimeImmutable($dateString . ' ' . $endTimeClean);
+            
             for ($t = $start; $t < $end; $t = $t->modify('+'.self::SLOT_MINUTES.' minutes')) {
                 $tEnd = $t->modify('+'.self::SLOT_MINUTES.' minutes');
                 if ($tEnd > $end) break;
 
-                // No permitir reservar en pasado
-                if ($t <= new \DateTimeImmutable()) continue;
+                // No permitir reservar en pasado (solo si es hoy y la hora ya pasó)
+                if ($date->format('Y-m-d') === $now->format('Y-m-d') && $t <= $now) {
+                    continue;
+                }
 
-                $s = $t->format('Y-m-d H:i:s');
-                $e = $tEnd->format('Y-m-d H:i:s');
-                if (!Appointment::overlapsWindow($s, $e, $doctorId, $locationId)) {
+                $startTimeOnly = $t->format('H:i:s');
+                $endTimeOnly = $tEnd->format('H:i:s');
+                if (!Appointment::overlapsWindow($dateString, $startTimeOnly, $endTimeOnly, $doctorId, $locationId)) {
                     $slots[] = $t->format('H:i');
                 }
             }

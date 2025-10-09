@@ -6,6 +6,18 @@ use PDO;
 
 class Doctor
 {
+    public static function find(int $id): ?array
+    {
+        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, u.dni, e.nombre as especialidad_nombre
+                FROM doctores d
+                JOIN usuarios u ON d.usuario_id = u.id
+                LEFT JOIN especialidades e ON d.especialidad_id = e.id
+                WHERE d.id = :id';
+        $stmt = Database::pdo()->prepare($sql);
+        $stmt->execute(['id' => $id]);
+        return $stmt->fetch() ?: null;
+    }
+
     public static function findByUsuarioId(int $usuarioId): ?array
     {
         $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, u.dni, e.nombre as especialidad_nombre

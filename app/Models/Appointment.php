@@ -172,6 +172,16 @@ class Appointment
         return $st->execute(['estado'=>$estado,'id'=>$id]);
     }
 
+    public static function updatePayment(int $id, string $paymentStatus): bool
+    {
+        $allowed = ['pendiente','pagado','rechazado'];
+        if (!in_array($paymentStatus,$allowed,true)) return false;
+        
+        // Solo se puede cambiar el pago si la cita está atendida
+        $st = Database::pdo()->prepare('UPDATE citas SET pago=:pago WHERE id=:id AND estado=\'atendido\'');
+        return $st->execute(['pago'=>$paymentStatus,'id'=>$id]);
+    }
+
     public static function belongsToDoctor(int $id, int $doctorId): bool {
         $st=Database::pdo()->prepare('SELECT 1 FROM citas WHERE id=:id AND doctor_id=:doctor_id');
         $st->execute(['id'=>$id,'doctor_id'=>$doctorId]);

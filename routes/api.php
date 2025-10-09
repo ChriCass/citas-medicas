@@ -56,8 +56,8 @@ $doctorId = (int)($req->query['doctor_id'] ?? 0);
 $locationId = (int)($req->query['location_id'] ?? 0); // sede_id
 
 
-if (!$date || !$doctorId || !$locationId) {
-return $res->json(['message'=>'Bad Request (date, doctor_id, location_id)'], 400);
+if (!$date || !$doctorId) {
+return $res->json(['message'=>'Bad Request (date, doctor_id requeridos)'], 400);
 }
 try {
 $slots = Availability::slotsForDate(new \DateTimeImmutable($date), $doctorId, $locationId);

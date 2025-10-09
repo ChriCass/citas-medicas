@@ -1,13 +1,10 @@
 <?php
-// Mapea 1..7 → nombres
-$days = [0=>'Dom',1=>'Lun',2=>'Mar',3=>'Mié',4=>'Jue',5=>'Vie',6=>'Sáb'];
-
 /** Espera $title, $schedules, $user (opcional) */
 ?>
 <section class="hero">
   <div>
     <h1><?= htmlspecialchars($title ?? 'Horarios Doctores') ?></h1>
-    <p class="mt-2">Administra turnos por <strong>doctor</strong>, <strong>sede</strong> y <strong>día</strong>.</p>
+    <p class="mt-2">Administra turnos por <strong>doctor</strong>, <strong>sede</strong> y <strong>fecha específica</strong>.</p>
     <div class="auth-links mt-3">
       <a href="/doctor-schedules/create" class="btn primary">+ Nuevo horario</a>
     </div>
@@ -26,10 +23,12 @@ $days = [0=>'Dom',1=>'Lun',2=>'Mar',3=>'Mié',4=>'Jue',5=>'Vie',6=>'Sáb'];
           <tr>
             <th>Doctor</th>
             <th>Sede</th>
+            <th>Fecha</th>
             <th>Día</th>
             <th>Inicio</th>
             <th>Fin</th>
-            <th></th>
+            <th>Estado</th>
+            <th>Observaciones</th>
             <th>Acciones</th>
           </tr>
         </thead>
@@ -40,11 +39,22 @@ $days = [0=>'Dom',1=>'Lun',2=>'Mar',3=>'Mié',4=>'Jue',5=>'Vie',6=>'Sáb'];
               <?= htmlspecialchars($h['doctor_name'] ?? '') ?><br>
               <small class="muted"><?= htmlspecialchars($h['doctor_email'] ?? '') ?></small>
             </td>
-            <td><?= htmlspecialchars($h['sede_nombre'] ?? '') ?></td>
-            <td><?= htmlspecialchars($days[(int)($h['dia_semana'] ?? 0)] ?? (string)($h['dia_semana'] ?? '')) ?></td>
+            <td><?= htmlspecialchars($h['sede_nombre'] ?? 'Sin sede') ?></td>
+            <td>
+              <?php 
+                $fecha = $h['fecha'] ?? '';
+                echo htmlspecialchars(date('d/m/Y', strtotime($fecha))); 
+              ?>
+            </td>
+            <td><?= htmlspecialchars($h['dia_nombre'] ?? '') ?></td>
             <td><?= htmlspecialchars(substr((string)$h['hora_inicio'],0,5)) ?></td>
             <td><?= htmlspecialchars(substr((string)$h['hora_fin'],0,5)) ?></td>
-            <td></td>
+            <td>
+              <span class="badge <?= ($h['activo'] ?? 1) ? 'success' : 'danger' ?>">
+                <?= ($h['activo'] ?? 1) ? 'Activo' : 'Inactivo' ?>
+              </span>
+            </td>
+            <td><?= htmlspecialchars($h['observaciones'] ?? '') ?></td>
             <td>
               <form method="POST" action="/doctor-schedules/<?= (int)$h['id'] ?>/delete"
                     onsubmit="return confirm('¿Eliminar este horario?');" style="display:inline">

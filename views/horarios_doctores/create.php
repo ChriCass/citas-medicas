@@ -42,14 +42,10 @@ $role = $_SESSION['user']['rol'] ?? '';
   </div>
 
   <div class="row">
-    <label class="label" for="weekday">Día de la semana</label>
-    <?php $daysFull = [1=>'Lunes',2=>'Martes',3=>'Miércoles',4=>'Jueves',5=>'Viernes',6=>'Sábado',7=>'Domingo']; ?>
-    <select name="weekday" id="weekday" class="input" required>
-      <option value="">— Selecciona —</option>
-      <?php foreach ($daysFull as $k=>$v): ?>
-        <option value="<?= $k ?>" <?= (!empty($old['weekday']) && (int)$old['weekday']===$k)? 'selected':'' ?>><?= $v ?></option>
-      <?php endforeach; ?>
-    </select>
+    <label class="label" for="fecha">Fecha</label>
+    <input type="date" name="fecha" id="fecha" class="input" required
+           value="<?= htmlspecialchars($old['fecha'] ?? '') ?>">
+    <small class="hint">Selecciona la fecha específica para este horario.</small>
   </div>
 
   <div class="row">

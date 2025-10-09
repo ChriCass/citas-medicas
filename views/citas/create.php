@@ -69,19 +69,42 @@ async function loadSlots(){
   const l = document.getElementById('sede_id').value;
   const date = document.getElementById('date').value;
   const sel = document.getElementById('time');
-  sel.innerHTML = '';
-  if (!d || !date) return;
+  sel.innerHTML = '<option value="">Cargando...</option>';
+  
+  if (!d || !date) {
+    sel.innerHTML = '<option value="">Selecciona doctor y fecha</option>';
+    return;
+  }
+  
   try{
     const res = await fetch(`/api/v1/slots?date=${encodeURIComponent(date)}&doctor_id=${encodeURIComponent(d)}&location_id=${encodeURIComponent(l||0)}`);
     const data = await res.json();
-    (data.slots || []).forEach(h => {
-      const o = document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o);
-    });
-    if(!sel.options.length){
-      const o=document.createElement('option'); o.value=''; o.textContent='Sin horarios'; sel.appendChild(o);
+    
+    sel.innerHTML = '';
+    
+    if (data.slots && data.slots.length > 0) {
+      // Agregar opción por defecto
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = '— Selecciona una hora —';
+      sel.appendChild(defaultOption);
+      
+      // Agregar slots disponibles
+      data.slots.forEach(h => {
+        const o = document.createElement('option'); 
+        o.value = h; 
+        o.textContent = h + ' (15 min)'; 
+        sel.appendChild(o);
+      });
+    } else {
+      const o = document.createElement('option'); 
+      o.value = ''; 
+      o.textContent = 'Sin horarios disponibles para esta fecha'; 
+      sel.appendChild(o);
     }
-  }catch(e){
-    const o=document.createElement('option'); o.value=''; o.textContent='Error'; sel.appendChild(o);
+  } catch(e) {
+    console.error('Error cargando slots:', e);
+    sel.innerHTML = '<option value="">Error al cargar horarios</option>';
   }
 }
 ['doctor_id','sede_id','date'].forEach(id => document.getElementById(id).addEventListener('change', loadSlots));

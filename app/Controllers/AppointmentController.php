@@ -35,7 +35,7 @@ class AppointmentController
         Auth::abortUnless($res, ['superadmin']); // Solo superadmin crea
 
         $pacientes = User::patients(null, 300);
-        $doctores = User::doctors(null, 300);
+        $doctores = Doctor::getAll(); // Cambiado a usar Doctor::getAll() que devuelve doctores con sus IDs correctos
         $sedes = Sede::getAll();
         $especialidades = Especialidad::getAll();
         $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
@@ -53,47 +53,76 @@ class AppointmentController
             return $res->view('citas/create', [
                 'error'=>'CSRF inválido',
                 'pacientes'=>User::patients(null,300),
-                'doctores'=>User::doctors(null,300),
+                'doctores'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),
                 'especialidades'=>Especialidad::getAll(),
                 'today'=>date('Y-m-d'),
             ]);
         }
 
-        $pacienteId = (int)($_POST['paciente_id'] ?? 0);
-        $doctorId = (int)($_POST['doctor_id'] ?? 0);
+        $pacienteUsuarioId = (int)($_POST['paciente_id'] ?? 0); // Este es el usuario_id del paciente o 0 para superadmin
+        $doctorId = (int)($_POST['doctor_id'] ?? 0); // Este es el ID del doctor
         $sedeId = (int)($_POST['sede_id'] ?? 0);
-        $fecha = (string)($_POST['fecha'] ?? '');
-        $horaInicio = (string)($_POST['hora_inicio'] ?? '');
-        $horaFin = (string)($_POST['hora_fin'] ?? '');
-        $razon = trim((string)($_POST['razon'] ?? ''));
+        $date = (string)($_POST['date'] ?? '');
+        $time = (string)($_POST['time'] ?? '');
+        $notes = trim((string)($_POST['notes'] ?? ''));
 
-        if (!$pacienteId || !$doctorId || !$fecha || !$horaInicio || !$horaFin) {
+        if (!$doctorId || !$date || !$time) {
             return $res->view('citas/create', [
                 'error'=>'Datos incompletos',
                 'pacientes'=>User::patients(null,300),
-                'doctores'=>User::doctors(null,300),
+                'doctores'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),
                 'especialidades'=>Especialidad::getAll(),
                 'today'=>date('Y-m-d'),
             ]);
         }
 
-        // Validaciones básicas
-        $paciente = Paciente::findByUsuarioId($pacienteId);
-        $doctor = Doctor::findByUsuarioId($doctorId);
+        // Si paciente_id es 0, la cita es para el superadmin
+        $pacienteId = $pacienteUsuarioId;
+        if ($pacienteUsuarioId > 0) {
+            $paciente = Paciente::findByUsuarioId($pacienteUsuarioId);
+            if (!$paciente) {
+                return $res->view('citas/create', ['error'=>'Paciente no válido'] + self::bags());
+            }
+            $pacienteId = $paciente['id'];
+        } else {
+            // Para superadmin, crear un paciente temporal o usar uno existente
+            $paciente = Paciente::findByUsuarioId((int)$user['id']);
+            if (!$paciente) {
+                return $res->view('citas/create', ['error'=>'No se pudo crear la cita para superadmin'] + self::bags());
+            }
+            $pacienteId = $paciente['id'];
+        }
+
+        // Validar doctor
+        $doctor = Doctor::find($doctorId);
+        if (!$doctor) {
+            return $res->view('citas/create', ['error'=>'Doctor no válido'] + self::bags());
+        }
+
+        // Validar sede si se proporciona
         $sede = $sedeId > 0 ? Sede::find($sedeId) : null;
-        
-        if (!$paciente) return $res->view('citas/create', ['error'=>'Paciente no válido'] + self::bags());
-        if (!$doctor) return $res->view('citas/create', ['error'=>'Doctor no válido'] + self::bags());
-        if ($sedeId > 0 && !$sede) return $res->view('citas/create', ['error'=>'Sede no válida'] + self::bags());
+        if ($sedeId > 0 && !$sede) {
+            return $res->view('citas/create', ['error'=>'Sede no válida'] + self::bags());
+        }
+
+        // Calcular hora de fin (15 minutos después)
+        try {
+            $startTime = new \DateTimeImmutable("$date $time");
+            $endTime = $startTime->modify('+15 minutes');
+            $horaInicio = $startTime->format('H:i:s');
+            $horaFin = $endTime->format('H:i:s');
+        } catch (\Exception $e) {
+            return $res->view('citas/create', ['error'=>'Fecha u hora inválida'] + self::bags());
+        }
 
         // Verificar solapamiento
-        if (Appointment::overlapsWindow($fecha, $horaInicio, $horaFin, $doctor['id'], $sedeId)) {
+        if (Appointment::overlapsWindow($date, $horaInicio, $horaFin, $doctorId, $sedeId)) {
             return $res->view('citas/create', ['error'=>'El horario ya no está disponible'] + self::bags());
         }
 
-        Appointment::create($paciente['id'], $doctor['id'], $sedeId > 0 ? $sedeId : null, $fecha, $horaInicio, $horaFin, $razon);
+        Appointment::create($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes);
         return $res->redirect('/citas');
     }
 
@@ -168,7 +197,7 @@ class AppointmentController
     private static function bags(): array {
         return [
             'pacientes'=>User::patients(null,300),
-            'doctores'=>User::doctors(null,300),
+            'doctores'=>Doctor::getAll(),
             'sedes'=>Sede::getAll(),
             'especialidades'=>Especialidad::getAll(),
             'today'=>date('Y-m-d'),

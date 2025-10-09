@@ -121,20 +121,21 @@ CONSTRAINT fk_ds_doctor FOREIGN KEY (doctor_id) REFERENCES doctores(id) ON DELET
 );
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'horarios') AND type = N'U')
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'horarios_medicos') AND type = N'U')
 BEGIN
-CREATE TABLE horarios (
+CREATE TABLE horarios_medicos (
 id INT IDENTITY(1,1) PRIMARY KEY,
 doctor_id INT NOT NULL,
 sede_id INT NULL,
-dia_semana TINYINT NOT NULL, -- 1=Lunes, 7=Domingo (asumido)
+fecha DATE NOT NULL,
 hora_inicio TIME NOT NULL,
 hora_fin TIME NOT NULL,
+activo BIT DEFAULT 1,
+observaciones NVARCHAR(255) NULL,
 creado_en DATETIME DEFAULT GETDATE(),
--- Se añade restricción UNIQUE para evitar duplicidad de horarios
-CONSTRAINT uq_horario_doctor_day_time UNIQUE (doctor_id, sede_id, dia_semana, hora_inicio, hora_fin),
-CONSTRAINT fk_horario_doctor FOREIGN KEY (doctor_id) REFERENCES doctores(id) ON DELETE CASCADE,
-CONSTRAINT fk_horario_sede FOREIGN KEY (sede_id) REFERENCES sedes(id) ON DELETE SET NULL
+CONSTRAINT fk_hm_doctor FOREIGN KEY (doctor_id) REFERENCES doctores(id) ON DELETE CASCADE,
+CONSTRAINT fk_hm_sede FOREIGN KEY (sede_id) REFERENCES sedes(id) ON DELETE SET NULL,
+CONSTRAINT uq_hm_doctor_fecha_hora UNIQUE (doctor_id, sede_id, fecha, hora_inicio, hora_fin)
 );
 END;
 
@@ -371,34 +372,58 @@ SELECT v.* FROM (VALUES
 ) v(sede_id,doctor_id,fecha_inicio)
 WHERE NOT EXISTS (SELECT 1 FROM doctor_sede ds WHERE ds.sede_id=v.sede_id AND ds.doctor_id=v.doctor_id);
 
-INSERT INTO horarios (doctor_id, sede_id, dia_semana, hora_inicio, hora_fin)
+INSERT INTO horarios_medicos (doctor_id, sede_id, fecha, hora_inicio, hora_fin)
 SELECT v.* FROM (VALUES
-(1,1,1,'08:00:00','12:00:00'),(1,1,1,'14:00:00','18:00:00'),(1,1,2,'08:00:00','12:00:00'),(1,1,2,'14:00:00','18:00:00'),(1,1,3,'08:00:00','12:00:00'),(1,1,3,'14:00:00','18:00:00'),(1,1,4,'08:00:00','12:00:00'),(1,1,4,'14:00:00','18:00:00'),(1,1,5,'08:00:00','12:00:00'),(1,1,5,'14:00:00','18:00:00'),
-(1,2,1,'09:00:00','13:00:00'),(1,2,3,'09:00:00','13:00:00'),(1,2,5,'09:00:00','13:00:00'),
-(2,1,1,'09:00:00','13:00:00'),(2,1,1,'15:00:00','19:00:00'),(2,1,3,'09:00:00','13:00:00'),(2,1,3,'15:00:00','19:00:00'),(2,1,5,'09:00:00','13:00:00'),(2,1,5,'15:00:00','19:00:00'),
-(2,2,2,'10:00:00','14:00:00'),(2,2,4,'10:00:00','14:00:00'),
-(3,2,2,'08:30:00','12:30:00'),(3,2,2,'14:30:00','18:30:00'),(3,2,4,'08:30:00','12:30:00'),(3,2,4,'14:30:00','18:30:00'),(3,2,6,'08:30:00','12:30:00'),
-(3,5,1,'09:00:00','13:00:00'),(3,5,3,'09:00:00','13:00:00'),(3,5,5,'09:00:00','13:00:00'),
-(4,3,1,'09:00:00','13:00:00'),(4,3,1,'15:00:00','19:00:00'),(4,3,3,'09:00:00','13:00:00'),(4,3,3,'15:00:00','19:00:00'),(4,3,5,'09:00:00','13:00:00'),(4,3,5,'15:00:00','19:00:00'),
-(4,4,2,'08:00:00','12:00:00'),(4,4,4,'08:00:00','12:00:00'),(4,4,6,'08:00:00','12:00:00'),
-(5,4,2,'08:00:00','12:00:00'),(5,4,2,'14:00:00','18:00:00'),(5,4,4,'08:00:00','12:00:00'),(5,4,4,'14:00:00','18:00:00'),(5,4,6,'08:00:00','12:00:00'),
-(5,1,1,'10:00:00','14:00:00'),(5,1,3,'10:00:00','14:00:00'),(5,1,5,'10:00:00','14:00:00'),
-(8,1,2,'08:00:00','12:00:00'),(8,1,2,'14:00:00','18:00:00'),(8,1,4,'08:00:00','12:00:00'),(8,1,4,'14:00:00','18:00:00'),(8,1,6,'08:00:00','12:00:00'),
-(8,2,1,'09:00:00','13:00:00'),(8,2,3,'09:00:00','13:00:00'),(8,2,5,'09:00:00','13:00:00'),
-(8,3,2,'10:00:00','14:00:00'),(8,3,4,'10:00:00','14:00:00'),
-(9,1,1,'09:00:00','13:00:00'),(9,1,1,'15:00:00','19:00:00'),(9,1,3,'09:00:00','13:00:00'),(9,1,3,'15:00:00','19:00:00'),(9,1,5,'09:00:00','13:00:00'),(9,1,5,'15:00:00','19:00:00'),
-(9,2,2,'10:00:00','14:00:00'),(9,2,4,'10:00:00','14:00:00'),
-(9,3,1,'11:00:00','15:00:00'),(9,3,3,'11:00:00','15:00:00'),(9,3,5,'11:00:00','15:00:00'),
-(10,1,2,'08:30:00','12:30:00'),(10,1,2,'14:30:00','18:30:00'),(10,1,4,'08:30:00','12:30:00'),(10,1,4,'14:30:00','18:30:00'),(10,1,6,'08:30:00','12:30:00'),
-(10,4,1,'09:00:00','13:00:00'),(10,4,3,'09:00:00','13:00:00'),(10,4,5,'09:00:00','13:00:00'),
-(10,5,2,'10:00:00','14:00:00'),(10,5,4,'10:00:00','14:00:00'),
-(11,2,1,'09:00:00','13:00:00'),(11,2,1,'15:00:00','19:00:00'),(11,2,3,'09:00:00','13:00:00'),(11,2,3,'15:00:00','19:00:00'),(11,2,5,'09:00:00','13:00:00'),(11,2,5,'15:00:00','19:00:00'),
-(11,3,2,'10:00:00','14:00:00'),(11,3,4,'10:00:00','14:00:00'),
-(11,5,1,'11:00:00','15:00:00'),(11,5,3,'11:00:00','15:00:00'),(11,5,5,'11:00:00','15:00:00')
-) v(doctor_id,sede_id,dia_semana,hora_inicio,hora_fin)
-WHERE NOT EXISTS (
-SELECT 1 FROM horarios h WHERE h.doctor_id=v.doctor_id AND h.sede_id=v.sede_id AND h.dia_semana=v.dia_semana AND h.hora_inicio=v.hora_inicio AND h.hora_fin=v.hora_fin
-);
+-- Dr. Juan Carlos (doctor_id=1) - Semana del 13 al 31 de octubre 2025
+(1,1,'2025-10-13','08:00:00','12:00:00'),(1,1,'2025-10-13','14:00:00','18:00:00'), -- Lunes
+(1,1,'2025-10-14','08:00:00','12:00:00'),(1,1,'2025-10-14','14:00:00','18:00:00'), -- Martes
+(1,1,'2025-10-15','08:00:00','12:00:00'),(1,1,'2025-10-15','14:00:00','18:00:00'), -- Miércoles
+(1,1,'2025-10-16','08:00:00','12:00:00'),(1,1,'2025-10-16','14:00:00','18:00:00'), -- Jueves
+(1,1,'2025-10-17','08:00:00','12:00:00'),(1,1,'2025-10-17','14:00:00','18:00:00'), -- Viernes
+(1,2,'2025-10-13','09:00:00','13:00:00'),(1,2,'2025-10-15','09:00:00','13:00:00'),(1,2,'2025-10-17','09:00:00','13:00:00'),
+-- Semana siguiente
+(1,1,'2025-10-20','08:00:00','12:00:00'),(1,1,'2025-10-20','14:00:00','18:00:00'), -- Lunes
+(1,1,'2025-10-21','08:00:00','12:00:00'),(1,1,'2025-10-21','14:00:00','18:00:00'), -- Martes
+(1,1,'2025-10-22','08:00:00','12:00:00'),(1,1,'2025-10-22','14:00:00','18:00:00'), -- Miércoles
+(1,1,'2025-10-23','08:00:00','12:00:00'),(1,1,'2025-10-23','14:00:00','18:00:00'), -- Jueves
+(1,1,'2025-10-24','08:00:00','12:00:00'),(1,1,'2025-10-24','14:00:00','18:00:00'), -- Viernes
+(1,2,'2025-10-20','09:00:00','13:00:00'),(1,2,'2025-10-22','09:00:00','13:00:00'),(1,2,'2025-10-24','09:00:00','13:00:00'),
+-- Última semana
+(1,1,'2025-10-27','08:00:00','12:00:00'),(1,1,'2025-10-27','14:00:00','18:00:00'), -- Lunes
+(1,1,'2025-10-28','08:00:00','12:00:00'),(1,1,'2025-10-28','14:00:00','18:00:00'), -- Martes
+(1,1,'2025-10-29','08:00:00','12:00:00'),(1,1,'2025-10-29','14:00:00','18:00:00'), -- Miércoles
+(1,1,'2025-10-30','08:00:00','12:00:00'),(1,1,'2025-10-30','14:00:00','18:00:00'), -- Jueves
+(1,1,'2025-10-31','08:00:00','12:00:00'),(1,1,'2025-10-31','14:00:00','18:00:00'), -- Viernes
+(1,2,'2025-10-27','09:00:00','13:00:00'),(1,2,'2025-10-29','09:00:00','13:00:00'),(1,2,'2025-10-31','09:00:00','13:00:00'),
+
+-- Dra. María Elena (doctor_id=2) - Patrón similar
+(2,1,'2025-10-13','09:00:00','13:00:00'),(2,1,'2025-10-13','15:00:00','19:00:00'), -- Lunes
+(2,1,'2025-10-15','09:00:00','13:00:00'),(2,1,'2025-10-15','15:00:00','19:00:00'), -- Miércoles  
+(2,1,'2025-10-17','09:00:00','13:00:00'),(2,1,'2025-10-17','15:00:00','19:00:00'), -- Viernes
+(2,2,'2025-10-14','10:00:00','14:00:00'),(2,2,'2025-10-16','10:00:00','14:00:00'), -- Martes, Jueves
+(2,1,'2025-10-20','09:00:00','13:00:00'),(2,1,'2025-10-20','15:00:00','19:00:00'),
+(2,1,'2025-10-22','09:00:00','13:00:00'),(2,1,'2025-10-22','15:00:00','19:00:00'),
+(2,1,'2025-10-24','09:00:00','13:00:00'),(2,1,'2025-10-24','15:00:00','19:00:00'),
+(2,2,'2025-10-21','10:00:00','14:00:00'),(2,2,'2025-10-23','10:00:00','14:00:00'),
+(2,1,'2025-10-27','09:00:00','13:00:00'),(2,1,'2025-10-27','15:00:00','19:00:00'),
+(2,1,'2025-10-29','09:00:00','13:00:00'),(2,1,'2025-10-29','15:00:00','19:00:00'),
+(2,1,'2025-10-31','09:00:00','13:00:00'),(2,1,'2025-10-31','15:00:00','19:00:00'),
+(2,2,'2025-10-28','10:00:00','14:00:00'),(2,2,'2025-10-30','10:00:00','14:00:00'),
+
+-- Dr. Roberto (doctor_id=3) - Patrón similar
+(3,2,'2025-10-14','08:30:00','12:30:00'),(3,2,'2025-10-14','14:30:00','18:30:00'), -- Martes
+(3,2,'2025-10-16','08:30:00','12:30:00'),(3,2,'2025-10-16','14:30:00','18:30:00'), -- Jueves
+(3,2,'2025-10-18','08:30:00','12:30:00'), -- Sábado
+(3,5,'2025-10-13','09:00:00','13:00:00'),(3,5,'2025-10-15','09:00:00','13:00:00'),(3,5,'2025-10-17','09:00:00','13:00:00'),
+(3,2,'2025-10-21','08:30:00','12:30:00'),(3,2,'2025-10-21','14:30:00','18:30:00'),
+(3,2,'2025-10-23','08:30:00','12:30:00'),(3,2,'2025-10-23','14:30:00','18:30:00'),
+(3,2,'2025-10-25','08:30:00','12:30:00'),
+(3,5,'2025-10-20','09:00:00','13:00:00'),(3,5,'2025-10-22','09:00:00','13:00:00'),(3,5,'2025-10-24','09:00:00','13:00:00'),
+(3,2,'2025-10-28','08:30:00','12:30:00'),(3,2,'2025-10-28','14:30:00','18:30:00'),
+(3,2,'2025-10-30','08:30:00','12:30:00'),(3,2,'2025-10-30','14:30:00','18:30:00'),
+(3,5,'2025-10-27','09:00:00','13:00:00'),(3,5,'2025-10-29','09:00:00','13:00:00'),(3,5,'2025-10-31','09:00:00','13:00:00')
+) v(doctor_id,sede_id,fecha,hora_inicio,hora_fin)
+WHERE NOT EXISTS (SELECT 1 FROM horarios_medicos hm WHERE hm.doctor_id=v.doctor_id AND hm.sede_id=v.sede_id AND hm.fecha=v.fecha AND hm.hora_inicio=v.hora_inicio AND hm.hora_fin=v.hora_fin);
 
 INSERT INTO diagnosticos (codigo, nombre_enfermedad, descripcion)
 SELECT v.* FROM (VALUES
@@ -415,7 +440,7 @@ SELECT v.* FROM (VALUES
 ) v(codigo,nombre_enfermedad,descripcion)
 WHERE NOT EXISTS (SELECT 1 FROM diagnosticos d WHERE d.codigo=v.codigo);
 
--- ===== GENERADOR DE CITAS =====
+-- ===== GENERADOR DE CITAS SIMPLIFICADO =====
 
 DECLARE @start_date DATE = '2025-10-13';
 DECLARE @end_date   DATE = '2025-10-31';
@@ -426,38 +451,21 @@ DECLARE @max_slots_per_day INT = 3;
 DELETE FROM calendario WHERE fecha BETWEEN @start_date AND @end_date;
 DELETE FROM citas WHERE fecha BETWEEN @start_date AND @end_date;
 
-;WITH fechas AS (
-SELECT @start_date AS fecha
-UNION ALL SELECT DATEADD(DAY,1,fecha) FROM fechas WHERE fecha < @end_date
-),
-nums AS (
+;WITH nums AS (
 SELECT 0 AS n
 UNION ALL SELECT n+1 FROM nums WHERE n < 31
 ),
 pacientes_cte AS (
-SELECT id AS paciente_id FROM pacientes -- Usamos la tabla real para IDs de paciente
+SELECT id AS paciente_id FROM pacientes
 ),
-fechas_con_idx AS (
-SELECT f.fecha, 
-       -- Usamos una lógica más robusta para calcular el día de la semana
-       -- Lunes = 1, Martes = 2, ..., Domingo = 7
-       CASE 
-           WHEN (DATEDIFF(DAY, '19000101', f.fecha) + 1) % 7 = 0 THEN 7  -- Domingo
-           ELSE (DATEDIFF(DAY, '19000101', f.fecha) + 1) % 7              -- Lunes-Sábado (1-6)
-       END AS dia_idx
-FROM fechas f
-),
-horarios_por_fecha AS (
-SELECT h.doctor_id, h.sede_id, f.fecha, h.dia_semana, h.hora_inicio, h.hora_fin
-FROM horarios h
-JOIN fechas_con_idx f ON f.dia_idx = h.dia_semana
-),
+-- Ahora simplemente obtenemos los horarios directamente por fecha
 slots AS (
-SELECT hpf.doctor_id, hpf.sede_id, hpf.fecha,
-CAST(DATEADD(MINUTE, n.n*@slot_minutes, CAST('1900-01-01 ' + CAST(hpf.hora_inicio AS VARCHAR(8)) AS DATETIME)) AS TIME) AS hora_inicio,
-CAST(DATEADD(MINUTE, (n.n+1) * @slot_minutes, CAST('1900-01-01 ' + CAST(hpf.hora_inicio AS VARCHAR(8)) AS DATETIME)) AS TIME) AS hora_fin
-FROM horarios_por_fecha hpf
-JOIN nums n ON DATEADD(MINUTE, (n.n+1) * @slot_minutes, CAST('1900-01-01 ' + CAST(hpf.hora_inicio AS VARCHAR(8)) AS DATETIME)) <= CAST('1900-01-01 ' + CAST(hpf.hora_fin AS VARCHAR(8)) AS DATETIME)
+SELECT hm.doctor_id, hm.sede_id, hm.fecha,
+CAST(DATEADD(MINUTE, n.n*@slot_minutes, CAST('1900-01-01 ' + CAST(hm.hora_inicio AS VARCHAR(8)) AS DATETIME)) AS TIME) AS hora_inicio,
+CAST(DATEADD(MINUTE, (n.n+1) * @slot_minutes, CAST('1900-01-01 ' + CAST(hm.hora_inicio AS VARCHAR(8)) AS DATETIME)) AS TIME) AS hora_fin
+FROM horarios_medicos hm
+JOIN nums n ON DATEADD(MINUTE, (n.n+1) * @slot_minutes, CAST('1900-01-01 ' + CAST(hm.hora_inicio AS VARCHAR(8)) AS DATETIME)) <= CAST('1900-01-01 ' + CAST(hm.hora_fin AS VARCHAR(8)) AS DATETIME)
+WHERE hm.fecha BETWEEN @start_date AND @end_date AND hm.activo = 1
 ),
 slots_limit AS (
 SELECT s.*, ROW_NUMBER() OVER (PARTITION BY s.doctor_id, s.fecha ORDER BY s.hora_inicio) AS rn
