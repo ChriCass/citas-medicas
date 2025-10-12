@@ -1,13 +1,187 @@
-PASOS RÁPIDOS
-1) Copia .env.example a .env y ajusta DB_CONNECTION (mysql o sqlsrv) y credenciales.
-2) ejecuta el backup med_database_v5.bak en tu sqlserver , Y UTILIZA LOS INSERTS DEL ARCHIVO DENTRO DE SQLSERVER_ESPAÑOL -> schema.sql 
-para efectos de comprobar la insersion de data.
-3) composer dump-autoload
-4) php -S localhost:8000 -t public
-5) Ingresa con usuarios demo (password: password).
+# PASOS DE INSTALACIÓN - SISTEMA DE CITAS MÉDICAS CON ELOQUENT ORM
 
-REGLAS
-- Superadmin: ver y crear citas (/citas/create)
-- Doctor: ver todas; no crea / no cambia status
-- Patient: ver solo sus citas; no crea / no cambia status
-- Cashier: ver todas y cambiar status (pendiente/confirmado/cancelado)
+## 📋 PREPARACIÓN INICIAL
+
+### 1. Configuración del Entorno
+```bash
+# Copiar archivo de configuración
+cp .env.example .env
+```
+
+### 2. Configurar Base de Datos en .env
+```env
+# Para SQL Server
+DB_CONNECTION=sqlsrv
+DB_HOST=localhost
+DB_PORT=1433
+DB_DATABASE=med_database_v5
+DB_USERNAME=tu_usuario
+DB_PASSWORD=tu_password
+
+# Para MySQL (alternativa)
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=med_database_v5
+DB_USERNAME=tu_usuario
+DB_PASSWORD=tu_password
+```
+
+### 3. Instalar Dependencias de Eloquent ORM
+```bash
+# Instalar Eloquent y dependencias relacionadas
+composer require illuminate/database
+composer require illuminate/events
+composer require nesbot/carbon
+
+# Regenerar autoloader
+composer dump-autoload
+```
+
+## 🗄️ CONFIGURACIÓN DE BASE DE DATOS
+
+### 4. Configurar Base de Datos (SQL Server)
+1. Crea una nueva base de datos llamada `med_database_v5` en tu SQL Server
+2. Ejecuta el script completo del archivo `sql/SQLServer_Español/schema.sql` que incluye:
+   - Creación de todas las tablas
+   - Inserción de datos de prueba (usuarios, roles, especialidades, etc.)
+   - Configuración de relaciones y constraints
+
+### 5. Alternativa MySQL
+Si prefieres usar MySQL, ejecuta:
+```sql
+-- Crear la base de datos
+CREATE DATABASE med_database_v5;
+
+-- Ejecutar el script de MySQL
+mysql -u usuario -p med_database_v5 < sql/mysql/schema.sql
+```
+
+## ⚙️ CONFIGURACIÓN DE ELOQUENT
+
+### 6. Inicialización Automática
+El sistema está configurado para inicializar Eloquent automáticamente:
+- `app/Core/Eloquent.php` - Configuración principal
+- `app/Core/Database.php` - Fallback para compatibilidad
+- Todos los modelos heredan de `BaseModel` con funcionalidades Eloquent
+
+### 7. Verificar Instalación
+```bash
+# Ejecutar test completo de Eloquent
+php test_eloquent_completo.php
+```
+
+El test debe mostrar **51/51 pruebas exitosas (100%)**.
+
+## 🚀 EJECUTAR EL SISTEMA
+
+### 8. Iniciar Servidor
+```bash
+# Servidor de desarrollo PHP
+php -S localhost:8000 -t public
+```
+
+### 9. Acceder al Sistema
+- **URL**: http://localhost:8000
+- **Usuarios Demo** (password: `password`):
+  - superadmin@clinicasanjose.com
+  - doctor@clinicasanjose.com  
+  - paciente@clinicasanjose.com
+  - cajero@clinicasanjose.com
+
+## 👥 ROLES Y PERMISOS
+
+### SUPERADMIN
+- ✅ Ver todas las citas
+- ✅ Crear nuevas citas (/citas/create)
+- ✅ Gestionar doctores y horarios
+- ✅ Acceso completo al sistema
+
+### DOCTOR
+- ✅ Ver todas las citas del sistema
+- ❌ No puede crear citas
+- ❌ No puede cambiar estados de citas
+- ✅ Gestionar sus horarios
+
+### PACIENTE  
+- ✅ Ver solo sus propias citas
+- ❌ No puede crear citas
+- ❌ No puede cambiar estados
+- ✅ Cancelar citas (con restricciones de tiempo)
+
+### CAJERO
+- ✅ Ver todas las citas
+- ✅ Cambiar estados de citas (pendiente/confirmado/cancelado)
+- ❌ No puede crear nuevas citas
+- ✅ Gestionar pagos y confirmaciones
+
+## 🔧 CARACTERÍSTICAS DE ELOQUENT
+
+### Beneficios Implementados
+- **Relaciones automáticas**: User->Doctor, Doctor->Especialidad, etc.
+- **Query Builder avanzado**: Consultas complejas simplificadas
+- **Eager Loading**: Carga eficiente de relaciones
+- **Accessors/Mutators**: Transformación automática de datos
+- **Transacciones**: Operaciones seguras en BD
+- **Validaciones**: Reglas de negocio integradas
+
+### Modelos Disponibles
+- `User` - Gestión de usuarios con roles
+- `Doctor` - Perfiles de doctores
+- `Paciente` - Perfiles de pacientes  
+- `Appointment` - Sistema de citas
+- `Especialidad` - Especialidades médicas
+- `Sede` - Sedes y ubicaciones
+- `Role` - Sistema de roles
+
+## 🧪 TESTING
+
+### Ejecutar Tests
+```bash
+# Test completo de migración
+php test_eloquent_completo.php
+
+# Verificar funcionalidades específicas
+curl http://localhost:8000/api/appointments
+```
+
+## 📁 ESTRUCTURA DEL PROYECTO
+
+```
+├── app/
+│   ├── Controllers/     # Controladores MVC
+│   ├── Core/           # Sistema base (Router, Auth, Eloquent)
+│   ├── Models/         # Modelos Eloquent
+│   └── Middleware/     # Middleware de autenticación
+├── public/             # Punto de entrada web
+├── routes/             # Definición de rutas
+├── views/              # Templates PHP
+├── sql/                # Scripts de base de datos
+└── vendor/             # Dependencias Composer
+```
+
+## ⚠️ NOTAS IMPORTANTES
+
+1. **Compatibilidad**: El sistema mantiene 100% compatibilidad con código existente
+2. **Performance**: Eloquent optimiza automáticamente las consultas
+3. **Seguridad**: Protección automática contra SQL injection
+4. **Escalabilidad**: Preparado para crecimiento futuro
+
+## 🐛 SOLUCIÓN DE PROBLEMAS
+
+### Error de Conexión a BD
+- Verificar credenciales en `.env`
+- Comprobar que el servicio de BD esté activo
+- Verificar extensiones PHP: `pdo_sqlsrv` o `pdo_mysql`
+
+### Error de Composer
+```bash
+composer install --ignore-platform-reqs
+composer dump-autoload
+```
+
+### Error de Permisos
+- Asegurar permisos de escritura en directorios de logs
+- Verificar permisos de BD para el usuario configurado
+
+---

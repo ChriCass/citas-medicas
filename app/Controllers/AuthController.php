@@ -8,8 +8,8 @@ class AuthController{
   public function login(Request $r, Response $res){
     $email=trim((string)($_POST['email']??'')); $password=(string)($_POST['password']??''); $t=(string)($_POST['_csrf']??'');
     if(!\App\Core\Csrf::verify($t)) return $res->view('auth/login',['error'=>'CSRF inválido','csrf'=>Csrf::token()]);
-    $u=User::findByEmail($email); if(!$u || !password_verify($password,$u['contrasenia'])) return $res->view('auth/login',['error'=>'Credenciales inválidas','csrf'=>Csrf::token()]);
-    $_SESSION['user']=['id'=>(int)$u['id'],'nombre'=>$u['nombre'],'apellido'=>$u['apellido'],'email'=>$u['email'],'rol'=>$u['rol_nombre']]; return $res->redirect('/dashboard');
+    $u=User::findByEmail($email); if(!$u || !password_verify($password,$u->contrasenia)) return $res->view('auth/login',['error'=>'Credenciales inválidas','csrf'=>Csrf::token()]);
+    $_SESSION['user']=['id'=>(int)$u->id,'nombre'=>$u->nombre,'apellido'=>$u->apellido,'email'=>$u->email,'rol'=>$u->getRoleName()]; return $res->redirect('/dashboard');
   }
   public function showRegister(Request $r, Response $res){ return $res->view('auth/register',['csrf'=>Csrf::token()]); }
   public function register(Request $r, Response $res){

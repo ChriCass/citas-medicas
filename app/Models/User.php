@@ -1,153 +1,155 @@
 <?php
 namespace App\Models;
 
-use App\Core\Database;
-use PDO;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Capsule\Manager as DB;
 
-class User
+class User extends BaseModel
 {
-    public static function findByEmail(string $email): ?array
+    protected $table = 'usuarios';
+    
+    protected $fillable = [
+        'nombre', 'apellido', 'email', 'contrasenia', 
+        'dni', 'telefono', 'direccion'
+    ];
+    
+    protected $hidden = ['contrasenia'];
+    
+    // Relaciones
+    public function roles(): BelongsToMany
     {
-        $sql = 'SELECT u.*, r.nombre as rol_nombre 
-                FROM usuarios u 
-                LEFT JOIN tiene_roles tr ON u.id = tr.usuario_id 
-                LEFT JOIN roles r ON tr.rol_id = r.id 
-                WHERE u.email = :email 
-                LIMIT 1';
-        if (Database::isSqlServer()) {
-            $sql = 'SELECT TOP 1 u.*, r.nombre as rol_nombre 
-                    FROM usuarios u 
-                    LEFT JOIN tiene_roles tr ON u.id = tr.usuario_id 
-                    LEFT JOIN roles r ON tr.rol_id = r.id 
-                    WHERE u.email = :email';
-        }
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['email' => $email]);
-        $user = $stmt->fetch();
-        return $user ?: null;
+        return $this->belongsToMany(Role::class, 'tiene_roles', 'usuario_id', 'rol_id')
+                    ->withPivot('creado_en');
     }
-
-    public static function create(string $nombre, string $apellido, string $email, string $passwordHash, string $rol = 'paciente', ?string $dni = null, ?string $telefono = null): int
+    
+    public function doctor(): HasOne
     {
-        $pdo = Database::pdo();
-        $pdo->beginTransaction();
+        return $this->hasOne(Doctor::class, 'usuario_id');
+    }
+    
+    public function paciente(): HasOne
+    {
+        return $this->hasOne(Paciente::class, 'usuario_id');
+    }
+    
+    public function cajero(): HasOne
+    {
+        return $this->hasOne(Cajero::class, 'usuario_id');
+    }
+    
+    public function superadmin(): HasOne
+    {
+        return $this->hasOne(Superadmin::class, 'usuario_id');
+    }
+    
+    // Métodos estáticos para compatibilidad
+    public static function findByEmail(string $email): ?User
+    {
+        return static::with('roles')->where('email', $email)->first();
+    }
+    
+    public static function createUser(string $nombre, string $apellido, string $email, string $passwordHash, string $rol = 'paciente', ?string $dni = null, ?string $telefono = null): int
+    {
+        DB::beginTransaction();
         
         try {
             // Crear usuario
-            $stmt = $pdo->prepare('INSERT INTO usuarios(nombre, apellido, email, contrasenia, dni, telefono) VALUES (:nombre, :apellido, :email, :contrasenia, :dni, :telefono)');
-            $stmt->execute([
-                'nombre' => $nombre,
-                'apellido' => $apellido,
-                'email' => $email,
-                'contrasenia' => $passwordHash,
-                'dni' => $dni,
-                'telefono' => $telefono
-            ]);
-            $userId = (int)$pdo->lastInsertId();
+            $user = new static();
+            $user->nombre = $nombre;
+            $user->apellido = $apellido;
+            $user->email = $email;
+            $user->contrasenia = $passwordHash;
+            $user->dni = $dni;
+            $user->telefono = $telefono;
+            $user->save();
             
-            // Obtener ID del rol
-            $rolId = self::getRolId($rol);
-            if (!$rolId) {
+            // Obtener rol
+            $roleModel = Role::where('nombre', $rol)->first();
+            if (!$roleModel) {
                 throw new \Exception("Rol no encontrado: $rol");
             }
             
             // Asignar rol
-            $stmt = $pdo->prepare('INSERT INTO tiene_roles(usuario_id, rol_id) VALUES (:usuario_id, :rol_id)');
-            $stmt->execute(['usuario_id' => $userId, 'rol_id' => $rolId]);
+            $user->roles()->attach($roleModel->id);
             
-            $pdo->commit();
-            return $userId;
+            DB::commit();
+            return $user->id;
         } catch (\Exception $e) {
-            $pdo->rollBack();
+            DB::rollBack();
             throw $e;
         }
     }
-
-    public static function findById(int $id): ?array
+    
+    public static function findById(int $id): ?User
     {
-        $sql = 'SELECT u.*, r.nombre as rol_nombre 
-                FROM usuarios u 
-                LEFT JOIN tiene_roles tr ON u.id = tr.usuario_id 
-                LEFT JOIN roles r ON tr.rol_id = r.id 
-                WHERE u.id = :id';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['id' => $id]);
-        $user = $stmt->fetch();
-        return $user ?: null;
+        return static::with('roles')->find($id);
     }
-
-    public static function getRolId(string $rol): ?int
+    
+    public function hasRole(string $rol): bool
     {
-        $stmt = Database::pdo()->prepare('SELECT id FROM roles WHERE nombre = :rol');
-        $stmt->execute(['rol' => $rol]);
-        $result = $stmt->fetch();
-        return $result ? (int)$result['id'] : null;
+        return $this->roles->contains('nombre', $rol);
     }
-
-    public static function getRoles(int $userId): array
+    
+    public function getRoles(): array
     {
-        $sql = 'SELECT r.nombre 
-                FROM roles r 
-                JOIN tiene_roles tr ON r.id = tr.rol_id 
-                WHERE tr.usuario_id = :usuario_id';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['usuario_id' => $userId]);
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        return $this->roles->pluck('nombre')->toArray();
     }
-
-    public static function hasRole(int $userId, string $rol): bool
+    
+    public function getRoleName(): ?string
     {
-        $roles = self::getRoles($userId);
-        return in_array($rol, $roles, true);
+        return $this->roles->first()?->nombre;
     }
-
-    /** Pacientes para selector */
-    public static function patients(?string $term = null, int $limit = 100): array
+    
+    // Scopes para selectores
+    public function scopePatients($query, ?string $term = null, int $limit = 100)
     {
-        return self::getUsersByRole('paciente', $term, $limit);
+        return $this->scopeUsersByRole($query, 'paciente', $term, $limit);
     }
-
-    /** Doctores para selector */
-    public static function doctors(?string $term = null, int $limit = 100): array
+    
+    public function scopeDoctors($query, ?string $term = null, int $limit = 100)
     {
-        return self::getUsersByRole('doctor', $term, $limit);
+        return $this->scopeUsersByRole($query, 'doctor', $term, $limit);
     }
-
-    private static function getUsersByRole(string $rol, ?string $term, int $limit): array
+    
+    public function scopeUsersByRole($query, string $rol, ?string $term = null, int $limit = 100)
     {
-        $params = ['rol' => $rol];
-        $where = "WHERE r.nombre = :rol";
+        $query = $query->whereHas('roles', function($q) use ($rol) {
+            $q->where('nombre', $rol);
+        });
         
         if ($term !== null && $term !== '') {
-            $where .= " AND (u.nombre LIKE :s OR u.apellido LIKE :s OR u.email LIKE :s)";
-            $params['s'] = '%' . $term . '%';
+            $query->where(function($q) use ($term) {
+                $q->where('nombre', 'LIKE', "%{$term}%")
+                  ->orWhere('apellido', 'LIKE', "%{$term}%")
+                  ->orWhere('email', 'LIKE', "%{$term}%");
+            });
         }
-
-        if (Database::driver() === 'sqlsrv') {
-            $limit = max(1, (int)$limit);
-            $sql = "SELECT TOP {$limit} u.id, u.nombre, u.apellido, u.email, u.telefono
-                    FROM usuarios u
-                    JOIN tiene_roles tr ON u.id = tr.usuario_id
-                    JOIN roles r ON tr.rol_id = r.id
-                    {$where}
-                    ORDER BY u.nombre ASC";
-            $stmt = Database::pdo()->prepare($sql);
-        } else {
-            $sql = "SELECT u.id, u.nombre, u.apellido, u.email, u.telefono
-                    FROM usuarios u
-                    JOIN tiene_roles tr ON u.id = tr.usuario_id
-                    JOIN roles r ON tr.rol_id = r.id
-                    {$where}
-                    ORDER BY u.nombre ASC
-                    LIMIT :lim";
-            $stmt = Database::pdo()->prepare($sql);
-            $stmt->bindValue(':lim', (int)$limit, PDO::PARAM_INT);
-        }
-
-        foreach ($params as $k => $v) {
-            $stmt->bindValue(':' . $k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
-        }
-        $stmt->execute();
-        return $stmt->fetchAll() ?: [];
+        
+        return $query->orderBy('nombre')->limit($limit);
+    }
+    
+    // Métodos estáticos de conveniencia
+    public static function patients(?string $term = null, int $limit = 100): \Illuminate\Database\Eloquent\Collection
+    {
+        return static::query()->patients($term, $limit)->get();
+    }
+    
+    public static function doctors(?string $term = null, int $limit = 100): \Illuminate\Database\Eloquent\Collection
+    {
+        return static::query()->doctors($term, $limit)->get();
+    }
+    
+    // Getter para compatibilidad con código existente
+    public function getRolNombreAttribute(): ?string
+    {
+        return $this->getRoleName();
+    }
+    
+    // Mantener método create original para compatibilidad
+    public static function create(string $nombre, string $apellido, string $email, string $passwordHash, string $rol = 'paciente', ?string $dni = null, ?string $telefono = null): int
+    {
+        return static::createUser($nombre, $apellido, $email, $passwordHash, $rol, $dni, $telefono);
     }
 }
