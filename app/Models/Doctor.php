@@ -1,91 +1,119 @@
 <?php
 namespace App\Models;
 
-use App\Core\Database;
-use PDO;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-class Doctor
+class Doctor extends BaseModel
 {
-    public static function find(int $id): ?array
+    protected $table = 'doctores';
+    
+    protected $fillable = [
+        'usuario_id', 'especialidad_id', 'cmp', 'biografia'
+    ];
+    
+    // Relaciones
+    public function user(): BelongsTo
     {
-        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, u.dni, e.nombre as especialidad_nombre
-                FROM doctores d
-                JOIN usuarios u ON d.usuario_id = u.id
-                LEFT JOIN especialidades e ON d.especialidad_id = e.id
-                WHERE d.id = :id';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
+        return $this->belongsTo(User::class, 'usuario_id');
     }
-
-    public static function findByUsuarioId(int $usuarioId): ?array
+    
+    public function especialidad(): BelongsTo
     {
-        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, u.dni, e.nombre as especialidad_nombre
-                FROM doctores d
-                JOIN usuarios u ON d.usuario_id = u.id
-                LEFT JOIN especialidades e ON d.especialidad_id = e.id
-                WHERE d.usuario_id = :usuario_id';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['usuario_id' => $usuarioId]);
-        return $stmt->fetch() ?: null;
+        return $this->belongsTo(Especialidad::class, 'especialidad_id');
     }
-
+    
+    public function citas(): HasMany
+    {
+        return $this->hasMany(Appointment::class, 'doctor_id');
+    }
+    
+    public function sedes(): BelongsToMany
+    {
+        return $this->belongsToMany(Sede::class, 'doctor_sede', 'doctor_id', 'sede_id')
+                    ->withPivot('fecha_inicio', 'fecha_fin');
+    }
+    
+    public function horarios(): HasMany
+    {
+        return $this->hasMany(DoctorSchedule::class, 'doctor_id');
+    }
+    
+    // Métodos estáticos para compatibilidad
+    public static function find(int $id): ?Doctor
+    {
+        return static::with(['user', 'especialidad'])->find($id);
+    }
+    
+    public static function findByUsuarioId(int $usuarioId): ?Doctor
+    {
+        return static::with(['user', 'especialidad'])->where('usuario_id', $usuarioId)->first();
+    }
+    
     public static function create(int $usuarioId, ?int $especialidadId = null, ?string $cmp = null, ?string $biografia = null): int
     {
-        $stmt = Database::pdo()->prepare('
-            INSERT INTO doctores(usuario_id, especialidad_id, cmp, biografia)
-            VALUES (:usuario_id, :especialidad_id, :cmp, :biografia)
-        ');
+        $doctor = new static();
+        $doctor->usuario_id = $usuarioId;
+        $doctor->especialidad_id = $especialidadId;
+        $doctor->cmp = $cmp;
+        $doctor->biografia = $biografia;
+        $doctor->save();
         
-        $stmt->execute([
-            'usuario_id' => $usuarioId,
-            'especialidad_id' => $especialidadId,
-            'cmp' => $cmp,
-            'biografia' => $biografia
-        ]);
-        
-        return (int)Database::pdo()->lastInsertId();
+        return $doctor->id;
     }
-
-    public static function update(int $usuarioId, array $data): bool
+    
+    public static function updateByUsuarioId(int $usuarioId, array $data): bool
     {
-        $fields = [];
-        $params = ['usuario_id' => $usuarioId];
-        
-        foreach ($data as $key => $value) {
-            $fields[] = "$key = :$key";
-            $params[$key] = $value;
-        }
-        
-        if (empty($fields)) {
+        $doctor = static::where('usuario_id', $usuarioId)->first();
+        if (!$doctor) {
             return false;
         }
         
-        $sql = 'UPDATE doctores SET ' . implode(', ', $fields) . ' WHERE usuario_id = :usuario_id';
-        $stmt = Database::pdo()->prepare($sql);
-        return $stmt->execute($params);
+        return $doctor->update($data);
     }
-
-    public static function getAll(): array
+    
+    public static function getAll(): \Illuminate\Database\Eloquent\Collection
     {
-        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, u.dni, e.nombre as especialidad_nombre
-                FROM doctores d
-                JOIN usuarios u ON d.usuario_id = u.id
-                LEFT JOIN especialidades e ON d.especialidad_id = e.id
-                ORDER BY u.nombre ASC';
-        return Database::pdo()->query($sql)->fetchAll();
+        return static::with(['user', 'especialidad'])->orderBy('id')->get();
     }
-
-    public static function getByEspecialidad(int $especialidadId): array
+    
+    public static function getByEspecialidad(int $especialidadId): \Illuminate\Database\Eloquent\Collection
     {
-        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, u.telefono, e.nombre as especialidad_nombre
-                FROM doctores d
-                JOIN usuarios u ON d.usuario_id = u.id
-                LEFT JOIN especialidades e ON d.especialidad_id = e.id
-                WHERE d.especialidad_id = :especialidad_id
-                ORDER BY u.nombre ASC';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['especialidad_id' => $especialidadId]);
-        return $stmt->fetchAll();
+        return static::with(['user', 'especialidad'])
+                     ->where('especialidad_id', $especialidadId)
+                     ->orderBy('id')
+                     ->get();
+    }
+    
+    // Accessors para compatibilidad
+    public function getNombreAttribute(): ?string
+    {
+        return $this->user?->nombre;
+    }
+    
+    public function getApellidoAttribute(): ?string
+    {
+        return $this->user?->apellido;
+    }
+    
+    public function getEmailAttribute(): ?string
+    {
+        return $this->user?->email;
+    }
+    
+    public function getTelefonoAttribute(): ?string
+    {
+        return $this->user?->telefono;
+    }
+    
+    public function getDniAttribute(): ?string
+    {
+        return $this->user?->dni;
+    }
+    
+    public function getEspecialidadNombreAttribute(): ?string
+    {
+        return $this->especialidad?->nombre;
     }
 }

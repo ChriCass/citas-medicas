@@ -1,0 +1,264 @@
+# ====================================
+# .gitignore para Proyecto PHP MVC con Eloquent
+# ====================================
+
+# =====================================
+# ARCHIVOS DE CONFIGURACIÓN SENSIBLES
+# =====================================
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# =====================================
+# DEPENDENCIAS Y LIBRERÍAS
+# =====================================
+/vendor/
+composer.phar
+composer.lock
+
+# =====================================
+# ARCHIVOS DE BASE DE DATOS
+# =====================================
+*.bak
+*.sql.backup
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de dump de BD
+dump.sql
+backup_*.sql
+database_backup_*
+
+# =====================================
+# LOGS Y ARCHIVOS TEMPORALES
+# =====================================
+/logs/
+*.log
+error.log
+access.log
+debug.log
+
+# Archivos temporales del sistema
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# =====================================
+# CACHÉS Y COMPILADOS
+# =====================================
+/cache/
+/storage/cache/
+/storage/logs/
+/storage/framework/cache/
+/storage/framework/sessions/
+/storage/framework/views/
+
+# Cachés de PHP
+opcache/
+*.cache
+
+# =====================================
+# ARCHIVOS DEL SISTEMA OPERATIVO
+# =====================================
+
+# Windows
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Linux
+*~
+.directory
+
+# =====================================
+# EDITORES E IDEs
+# =====================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PhpStorm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+
+# =====================================
+# ARCHIVOS DE TESTING Y DESARROLLO
+# =====================================
+/tests/coverage/
+/coverage/
+phpunit.xml
+.phpunit.result.cache
+
+# Archivos de test temporales
+test_results/
+test_*.log
+
+# =====================================
+# ARCHIVOS DE DEPLOYMENT
+# =====================================
+deploy.sh
+deploy.bat
+.deploy/
+.deployment/
+
+# Archivos de Docker (si se usan)
+docker-compose.override.yml
+.dockerignore
+
+# =====================================
+# ARCHIVOS DE DOCUMENTACIÓN TEMPORAL
+# =====================================
+TODO.txt
+NOTES.txt
+scratch.txt
+temp_notes.md
+
+# =====================================
+# UPLOADS Y ARCHIVOS DE USUARIO
+# =====================================
+/public/uploads/
+/storage/uploads/
+/files/
+uploads/
+
+# Avatares y imágenes de perfil
+/public/avatars/
+/public/profile_images/
+
+# =====================================
+# ARCHIVOS DE MONITOREO Y ANÁLISIS
+# =====================================
+.monitoring/
+analytics/
+metrics/
+
+# =====================================
+# ARCHIVOS DE SEGURIDAD
+# =====================================
+*.key
+*.pem
+*.crt
+*.csr
+private_key*
+public_key*
+
+# Certificados SSL
+ssl/
+certificates/
+
+# =====================================
+# ARCHIVOS DE BACKUP AUTOMÁTICO
+# =====================================
+*.backup
+*.bak.*
+backup_*
+*_backup
+
+# =====================================
+# ARCHIVOS ESPECÍFICOS DEL PROYECTO
+# =====================================
+
+# Archivos de configuración local de desarrolladores
+config.local.php
+settings.local.php
+
+# Archivos de prueba personales
+my_test.php
+debug.php
+test_personal.php
+
+# =====================================
+# NODE MODULES (si se usa frontend)
+# =====================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =====================================
+# ARCHIVOS COMPILED ASSETS
+# =====================================
+/public/css/
+/public/js/
+/public/mix-manifest.json
+
+# =====================================
+# ARCHIVOS DE SESIÓN
+# =====================================
+/storage/framework/sessions/
+/tmp/sessions/
+
+# =====================================
+# ARCHIVOS ESPECÍFICOS DE SERVIDORES
+# =====================================
+
+# Apache
+.htaccess.backup
+.htpasswd
+
+# Nginx
+nginx.conf.backup
+
+# =====================================
+# MISCELÁNEOS
+# =====================================
+
+# Archivos comprimidos
+*.zip
+*.rar
+*.tar.gz
+*.7z
+
+# Archivos de respaldo de editores
+*.orig
+*.rej
+
+# Archivos de proceso
+*.pid
+*.lock
+
+# =====================================
+# COMENTARIOS ADICIONALES
+# =====================================
+
+# Este .gitignore está diseñado para:
+# - Proteger información sensible (.env, credenciales)
+# - Evitar subir dependencias (vendor/)
+# - Excluir archivos temporales y logs
+# - Mantener el repo limpio y profesional
+# - Ser compatible con diferentes entornos de desarrollo
+
+# Para agregar excepciones, usar el símbolo !
+# Ejemplo: !importante.log
+
+# Para ignorar todo excepto algunos archivos en un directorio:
+# directorio/*
+# !directorio/archivo_importante.txt

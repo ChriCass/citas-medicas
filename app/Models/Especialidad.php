@@ -1,51 +1,53 @@
 <?php
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Especialidad
+class Especialidad extends BaseModel
 {
-    public static function getAll(): array
+    protected $table = 'especialidades';
+    
+    protected $fillable = ['nombre', 'descripcion'];
+    
+    // Relaciones
+    public function doctores(): HasMany
     {
-        return Database::pdo()->query('SELECT * FROM especialidades ORDER BY nombre ASC')->fetchAll();
+        return $this->hasMany(Doctor::class, 'especialidad_id');
     }
-
-    public static function find(int $id): ?array
+    
+    // Métodos estáticos para compatibilidad
+    public static function getAll(): \Illuminate\Database\Eloquent\Collection
     {
-        $stmt = Database::pdo()->prepare('SELECT * FROM especialidades WHERE id = :id');
-        $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
+        return static::orderBy('nombre')->get();
     }
-
+    
     public static function create(string $nombre, ?string $descripcion = null): int
     {
-        $stmt = Database::pdo()->prepare('INSERT INTO especialidades(nombre, descripcion) VALUES (:nombre, :descripcion)');
-        $stmt->execute(['nombre' => $nombre, 'descripcion' => $descripcion]);
-        return (int)Database::pdo()->lastInsertId();
+        $especialidad = new static();
+        $especialidad->nombre = $nombre;
+        $especialidad->descripcion = $descripcion;
+        $especialidad->save();
+        
+        return $especialidad->id;
     }
-
-    public static function update(int $id, array $data): bool
+    
+    public static function updateRecord(int $id, array $data): bool
     {
-        $fields = [];
-        $params = ['id' => $id];
-        
-        foreach ($data as $key => $value) {
-            $fields[] = "$key = :$key";
-            $params[$key] = $value;
-        }
-        
-        if (empty($fields)) {
+        $especialidad = parent::find($id);
+        if (!$especialidad) {
             return false;
         }
         
-        $sql = 'UPDATE especialidades SET ' . implode(', ', $fields) . ' WHERE id = :id';
-        $stmt = Database::pdo()->prepare($sql);
-        return $stmt->execute($params);
+        return $especialidad->update($data);
     }
-
-    public static function delete(int $id): bool
+    
+    public static function deleteRecord(int $id): bool
     {
-        $stmt = Database::pdo()->prepare('DELETE FROM especialidades WHERE id = :id');
-        return $stmt->execute(['id' => $id]);
+        $especialidad = parent::find($id);
+        if (!$especialidad) {
+            return false;
+        }
+        
+        return $especialidad->delete();
     }
 }

@@ -1,65 +1,71 @@
 <?php
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-class Sede
+class Sede extends BaseModel
 {
-    public static function getAll(): array
+    protected $table = 'sedes';
+    
+    protected $fillable = ['nombre_sede', 'direccion', 'telefono'];
+    
+    // Relaciones
+    public function doctores(): BelongsToMany
     {
-        return Database::pdo()->query('SELECT * FROM sedes ORDER BY nombre_sede ASC')->fetchAll();
+        return $this->belongsToMany(Doctor::class, 'doctor_sede', 'sede_id', 'doctor_id')
+                    ->withPivot('fecha_inicio', 'fecha_fin');
     }
-
-    public static function find(int $id): ?array
+    
+    public function citas(): HasMany
     {
-        $stmt = Database::pdo()->prepare('SELECT * FROM sedes WHERE id = :id');
-        $stmt->execute(['id' => $id]);
-        return $stmt->fetch() ?: null;
+        return $this->hasMany(Appointment::class, 'sede_id');
     }
-
+    
+    public function horarios(): HasMany
+    {
+        return $this->hasMany(DoctorSchedule::class, 'sede_id');
+    }
+    
+    // Métodos estáticos para compatibilidad
+    public static function getAll(): \Illuminate\Database\Eloquent\Collection
+    {
+        return static::orderBy('nombre_sede')->get();
+    }
+    
     public static function create(string $nombreSede, ?string $direccion = null, ?string $telefono = null): int
     {
-        $stmt = Database::pdo()->prepare('INSERT INTO sedes(nombre_sede, direccion, telefono) VALUES (:nombre_sede, :direccion, :telefono)');
-        $stmt->execute(['nombre_sede' => $nombreSede, 'direccion' => $direccion, 'telefono' => $telefono]);
-        return (int)Database::pdo()->lastInsertId();
+        $sede = new static();
+        $sede->nombre_sede = $nombreSede;
+        $sede->direccion = $direccion;
+        $sede->telefono = $telefono;
+        $sede->save();
+        
+        return $sede->id;
     }
-
-    public static function update(int $id, array $data): bool
+    
+    public static function updateRecord(int $id, array $data): bool
     {
-        $fields = [];
-        $params = ['id' => $id];
-        
-        foreach ($data as $key => $value) {
-            $fields[] = "$key = :$key";
-            $params[$key] = $value;
-        }
-        
-        if (empty($fields)) {
+        $sede = parent::find($id);
+        if (!$sede) {
             return false;
         }
         
-        $sql = 'UPDATE sedes SET ' . implode(', ', $fields) . ' WHERE id = :id';
-        $stmt = Database::pdo()->prepare($sql);
-        return $stmt->execute($params);
+        return $sede->update($data);
     }
-
-    public static function delete(int $id): bool
+    
+    public static function deleteRecord(int $id): bool
     {
-        $stmt = Database::pdo()->prepare('DELETE FROM sedes WHERE id = :id');
-        return $stmt->execute(['id' => $id]);
+        $sede = parent::find($id);
+        if (!$sede) {
+            return false;
+        }
+        
+        return $sede->delete();
     }
-
-    public static function getDoctores(int $sedeId): array
+    
+    public function getDoctores(): \Illuminate\Database\Eloquent\Collection
     {
-        $sql = 'SELECT d.*, u.nombre, u.apellido, u.email, e.nombre as especialidad_nombre
-                FROM doctores d
-                JOIN doctor_sede ds ON d.id = ds.doctor_id
-                JOIN usuarios u ON d.usuario_id = u.id
-                LEFT JOIN especialidades e ON d.especialidad_id = e.id
-                WHERE ds.sede_id = :sede_id
-                ORDER BY u.nombre ASC';
-        $stmt = Database::pdo()->prepare($sql);
-        $stmt->execute(['sede_id' => $sedeId]);
-        return $stmt->fetchAll();
+        return $this->doctores()->with(['user', 'especialidad'])->get();
     }
 }
