@@ -244,7 +244,8 @@ $timeOptions = [
 
     // --- Días usados (horarios) del doctor y filtrado de días disponibles ---
     window.usedDays = window.usedDays || [];
-    var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
+  var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
+  var MONTHS = {1:'enero',2:'febrero',3:'marzo',4:'abril',5:'mayo',6:'junio',7:'julio',8:'agosto',9:'septiembre',10:'octubre',11:'noviembre',12:'diciembre'};
     var FULL_DAY_KEYS = Object.keys(DAYS_OPTS); // ['lunes','martes',...]
 
     window.normalizeStr = function(s) {
@@ -284,8 +285,22 @@ $timeOptions = [
 
     window.loadUsedDays = async function(doctorId){
       if (!doctorId) { window.usedDays = []; window.updateAllDaySelects(); return; }
+      // Get selected month from the #mes select and convert to spanish month name
+      var mesSel = document.getElementById('mes');
+      var mesVal = mesSel ? mesSel.value : null;
+      var monthName = null;
+      if (mesVal) {
+        var mi = parseInt(mesVal, 10);
+        if (!isNaN(mi) && MONTHS[mi]) monthName = MONTHS[mi];
+        else monthName = String(mesVal).toLowerCase();
+      } else {
+        // default to current month name
+        var now = new Date(); var cm = now.getMonth() + 1; monthName = MONTHS[cm];
+      }
+
       try {
-        var res = await fetch('/doctors/' + encodeURIComponent(doctorId) + '/used-days', { credentials: 'same-origin' });
+        var url = '/doctors/' + encodeURIComponent(doctorId) + '/' + encodeURIComponent(monthName || '') + '/used-days';
+        var res = await fetch(url, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         var data = await res.json();
         var list = Array.isArray(data) ? data : [];
@@ -393,6 +408,25 @@ $timeOptions = [
       loadSedes(this.value);
       loadUsedDays(this.value);
     });
+    // When the selected month changes, reload used days for the current doctor
+    var mesSelect = document.getElementById('mes');
+    if (mesSelect) {
+      mesSelect.addEventListener('change', function(){
+        // Al cambiar el mes, limpiar todas las filas previas del cuerpo de la tabla
+        try {
+          var tbody = document.getElementById('daysTbody');
+          if (tbody) {
+            // Remove all child rows
+            while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+          }
+        } catch (err) {
+          console.warn('Error limpiando daysTbody:', err);
+        }
+
+        // Recargar días usados para el doctor/mes actual
+        loadUsedDays(doctorSelect.value);
+      });
+    }
   })();
 </script>
 <script>

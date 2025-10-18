@@ -44,4 +44,4 @@ $router->post('/doctor-schedules/{id}/apply',  [DoctorScheduleController::class,
 // Endpoint AJAX: obtener sedes de un doctor
 $router->get('/doctors/{id}/sedes', [DoctorScheduleController::class, 'doctorSedes'], ['auth']);
 // Endpoint AJAX: obtener días de semana ya usados por un doctor (para filtrar selects)
-$router->get('/doctors/{id}/used-days', [DoctorScheduleController::class, 'usedDays'], ['auth']);
+$router->get('/doctors/{id}/{month}/used-days', [DoctorScheduleController::class, 'usedDays'], ['auth']);

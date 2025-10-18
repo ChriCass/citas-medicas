@@ -230,6 +230,22 @@ class DoctorScheduleController
         if (!$startDate) return $res->abort(400, 'Mes/año inválidos');
         $endDate = (clone $startDate)->modify('last day of this month');
 
+        // Si el mes/año objetivo coincide con el mes/año actual, empezar desde el día siguiente (mañana)
+        $today = new \DateTime();
+        $nowYear = (int)$today->format('Y');
+        $nowMonth = (int)$today->format('n');
+        if ($anio === $nowYear && $mes === $nowMonth) {
+            $tomorrow = (clone $today)->modify('+1 day')->setTime(0,0,0);
+            // Si mañana está dentro del mes objetivo, comenzar desde mañana
+            if ($tomorrow <= $endDate) {
+                $startDate = $tomorrow;
+            } else {
+                // Nada que crear en este mes (mañana ya fuera de mes) -> no generar
+                $_SESSION['flash'] = ['warning' => 'No hay días hábiles por generar en el mes seleccionado (restan 0 días).'];
+                return $res->redirect('/doctor-schedules');
+            }
+        }
+
         // Crear patrones (horarios_medicos) únicamente para los días seleccionados y con horas provistas.
         $weekdayMapReverse = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
         // Normalizar lista de días seleccionados (clave en minúsculas)
@@ -609,6 +625,19 @@ class DoctorScheduleController
         if (!$start) return $res->json(['success'=>false,'message'=>'Mes/año inválidos'], 400);
         $end = $start->modify('last day of this month');
 
+        // Si el mes objetivo coincide con mes/año actual, comenzar desde mañana
+        $today = new \DateTimeImmutable();
+        $nowYear = (int)$today->format('Y');
+        $nowMonth = (int)$today->format('n');
+        if ($postedAnio === $nowYear && $postedMes === $nowMonth) {
+            $tomorrow = $today->modify('+1 day');
+            if ($tomorrow <= $end) {
+                $start = $tomorrow;
+            } else {
+                return $res->json(['success'=>true,'message'=>'No hay días por generar en el mes seleccionado (restan 0 días).', 'created'=>0,'slots'=>0]);
+            }
+        }
+
         $pdo = Database::pdo();
         $created = 0; $slotsCreated = 0; $skipped = 0; $skippedHolidays = 0;
 
@@ -714,11 +743,39 @@ class DoctorScheduleController
         if ($id <= 0) return $res->json([], 400);
 
         try {
-            $query = DoctorSchedule::where('doctor_id', $id)
+            // Determinar mes pasado en la ruta: puede ser nombre en español ('octubre') o número (1..12)
+            $monthParam = $req->params['month'] ?? null;
+            $monthName = null;
+            $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+            if ($monthParam !== null) {
+                $mp = mb_strtolower(trim((string)$monthParam));
+                if (is_numeric($mp)) {
+                    $mi = (int)$mp;
+                    if ($mi >=1 && $mi <=12) $monthName = $months[$mi];
+                } else {
+                    // Normalize common variants and accents
+                    $mp = str_replace(['á','é','í','ó','ú'], ['a','e','i','o','u'], $mp);
+                    // If the client sent 'octubre' or 'Octubre', it's fine.
+                    foreach ($months as $n => $m) {
+                        if ($m === $mp || str_replace(['á','é','í','ó','ú'], ['a','e','i','o','u'], $m) === $mp) {
+                            $monthName = $m; break;
+                        }
+                    }
+                }
+            }
+
+            // Construir query: si se proporcionó monthName, incluir patrones globales (mes NULL/empty) y patrones para ese mes
+            $baseQuery = DoctorSchedule::where('doctor_id', $id)
                         ->whereNotNull('dia_semana')
-                        ->where('activo', true)
-                        ->distinct()
-                        ->pluck('dia_semana');
+                        ->where('activo', true);
+
+            if ($monthName !== null) {
+                $baseQuery = $baseQuery->where(function($q) use ($monthName) {
+                    $q->whereNull('mes')->orWhere('mes', '')->orWhere('mes', $monthName);
+                });
+            }
+
+            $query = $baseQuery->distinct()->pluck('dia_semana');
 
             $days = is_array($query) ? $query : $query->toArray();
             $norm = [];
