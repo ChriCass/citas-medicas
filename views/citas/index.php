@@ -1,5 +1,10 @@
 <?php $role = $user['rol'] ?? ''; ?>
-<h1>Citas</h1>
+<h1><?= htmlspecialchars($title ?? 'Citas') ?></h1>
+
+<style>
+  /* Ocultar visualmente la columna de acciones sin eliminar el código */
+  .col-actions { display: none; }
+</style>
 
 <?php if ($role === 'superadmin'): ?>
   <a class="btn ghost" href="/citas/create">➕ Reservar nueva</a>
@@ -17,8 +22,8 @@
         <th>Hora Inicio</th>
         <th>Hora Fin</th>
         <th>Razón</th>
-        <th>Estado</th>
-        <th>Acciones</th>
+  <th>Estado</th>
+  <th>Acciones</th>
       </tr>
     </thead>
     <tbody>
@@ -29,8 +34,41 @@
           <td><?= htmlspecialchars($a['especialidad_nombre'] ?? 'N/A') ?></td>
           <td><?= htmlspecialchars($a['sede_nombre'] ?? 'N/A') ?></td>
           <td><?= htmlspecialchars(date('Y-m-d', strtotime($a['fecha']))) ?></td>
-          <td><?= htmlspecialchars($a['hora_inicio']) ?></td>
-          <td><?= htmlspecialchars($a['hora_fin']) ?></td>
+          <td>
+            <?php
+              // Mostrar solo la hora (HH:MM). Acepta formatos como 'YYYY-mm-dd HH:MM:SS', 'HH:MM:SS' o con microsegundos
+              $hi = $a['hora_inicio'] ?? '';
+              try {
+                if ($hi === '' || $hi === null) {
+                  echo htmlspecialchars('');
+                } else {
+                  // Normalizar microsegundos si existieran
+                  $hiClean = preg_replace('/\.[0-9]+$/', '', $hi);
+                  $dt = new DateTime($hiClean);
+                  echo htmlspecialchars($dt->format('H:i'));
+                }
+              } catch (Exception $e) {
+                // Fallback: mostrar el raw truncado a 5 caracteres (HH:MM)
+                echo htmlspecialchars(substr((string)$hi, 0, 5));
+              }
+            ?>
+          </td>
+          <td>
+            <?php
+              $hf = $a['hora_fin'] ?? '';
+              try {
+                if ($hf === '' || $hf === null) {
+                  echo htmlspecialchars('');
+                } else {
+                  $hfClean = preg_replace('/\.[0-9]+$/', '', $hf);
+                  $dt2 = new DateTime($hfClean);
+                  echo htmlspecialchars($dt2->format('H:i'));
+                }
+              } catch (Exception $e) {
+                echo htmlspecialchars(substr((string)$hf, 0, 5));
+              }
+            ?>
+          </td>
           <td><?= htmlspecialchars($a['razon'] ?? '') ?></td>
           <td>
             <span class="chip status-<?= htmlspecialchars($a['estado']) ?>">
@@ -38,13 +76,7 @@
             </span>
           </td>
           <td>
-            <?php if ($role === 'doctor' && $a['estado']==='confirmado'): ?>
-              <form method="POST" action="/citas/<?= (int)$a['id'] ?>/mark-attended" style="display:inline">
-                <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
-                <button class="btn small primary" type="submit">Marcar atendida</button>
-              </form>
-            <?php endif; ?>
-
+            
             <?php if (in_array($role, ['cajero','superadmin'], true)): ?>
               <form method="POST" action="/citas/<?= (int)$a['id'] ?>/status" style="display:inline">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">

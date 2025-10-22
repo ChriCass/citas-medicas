@@ -54,6 +54,13 @@
   // Helpers de rol
   $isSuper   = in_array($role, ['superadmin'], true);
   $isCashier = in_array($role, ['cashier','cajero'], true);
+  $isDoctor  = in_array($role, ['doctor'], true);
+  // detectar si el query param today está presente (para destacar 'Mis citas del día')
+  $todayParam = false;
+  if (isset($_GET['today'])) {
+    $todayRaw = (string)$_GET['today'];
+    $todayParam = in_array(strtolower($todayRaw), ['1','true','yes'], true);
+  }
 ?>
 <html lang="es">
 <head>
@@ -79,7 +86,10 @@
 
     <nav class="sb-nav" role="navigation" aria-label="Menú principal">
       <a href="/dashboard" class="sb-link <?= $isActive('/dashboard') ? 'active':'' ?>">🏠 Dashboard</a>
-      <a href="/citas" class="sb-link <?= $isActive('/citas') ? 'active':'' ?>">📅 Citas</a>
+      <a href="/citas" class="sb-link <?= ($isActive('/citas') && !$isActive('/citas/today')) ? 'active':'' ?>">📅 Citas</a>
+      <?php if ($isDoctor): ?>
+        <a href="/citas/today" class="sb-link <?= $isActive('/citas/today') ? 'active':'' ?>">📅 Mis citas del día</a>
+      <?php endif; ?>
 
       <?php if ($isSuper): ?>
         <a href="/citas/create" class="sb-link <?= $isActive('/citas/create') ? 'active':'' ?>">➕ Reservar cita</a>

@@ -66,4 +66,34 @@ return $res->json(['date'=>$date, 'slot_minutes'=>\App\Core\Availability::SLOT_M
 return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
 }
 }, ['json']);
+
+// Diagnósticos: autocompletado - devuelve lista simple de nombres
+$r->get('/diagnosticos', function($req,$res){
+	$q = trim((string)($req->query['q'] ?? ''));
+    // Si la query está vacía, interpretamos que el cliente quiere la lista completa
+
+	try {
+		// Obtener PDO (Database::pdo o Eloquent fallback)
+		try {
+			$pdo = \App\Core\Database::pdo();
+		} catch (\Throwable $e) {
+			$pdo = \App\Core\Eloquent::connection()->getPdo();
+		}
+
+		// Buscar id y nombre_enfermedad
+		$sql = "SELECT id, nombre_enfermedad FROM diagnosticos WHERE nombre_enfermedad LIKE :q";
+		// Ajuste para MySQL
+		if (!\App\Core\Database::isSqlServer()) {
+			$sql = "SELECT id, nombre_enfermedad FROM diagnosticos WHERE nombre_enfermedad LIKE :q";
+		}
+
+		$stmt = $pdo->prepare($sql);
+		$stmt->bindValue(':q', "%{$q}%", \PDO::PARAM_STR);
+		$stmt->execute();
+		$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+		return $res->json(['data'=>$rows]);
+	} catch (\Throwable $e) {
+		return $res->json(['data'=>[], 'error'=>$e->getMessage()], 500);
+	}
+}, ['json']);
 });

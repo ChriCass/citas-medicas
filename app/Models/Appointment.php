@@ -64,7 +64,7 @@ class Appointment extends BaseModel
             'doctor.especialidad', 
             'sede'
         ])->whereHas('doctor', function($query) use ($doctorId) {
-            $query->where('usuario_id', $doctorId);
+            $query->where('doctor_id', $doctorId);
         })->orderBy('fecha', 'desc')->orderBy('hora_inicio', 'desc')->get();
     }
     

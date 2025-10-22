@@ -44,6 +44,7 @@ $role = $_SESSION['user']['rol'] ?? '';
   <div class="row">
     <label class="label" for="fecha">Fecha</label>
     <input type="date" name="fecha" id="fecha" class="input" required
+           min="<?= date('Y-m-d') ?>"
            value="<?= htmlspecialchars($old['fecha'] ?? '') ?>">
     <small class="hint">Selecciona la fecha específica para este horario.</small>
   </div>

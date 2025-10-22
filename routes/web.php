@@ -11,13 +11,24 @@ $router->post('/register', [AuthController::class, 'register'], ['guest']);
 $router->post('/logout', [AuthController::class, 'logout'], ['auth']);
 
 $router->get('/citas', [AppointmentController::class, 'index'], ['auth']);
+$router->get('/citas/today', [AppointmentController::class, 'index'], ['auth']);
 $router->get('/citas/create', [AppointmentController::class, 'create'], ['auth']);
 $router->post('/citas', [AppointmentController::class, 'store'], ['auth']);
 
 $router->post('/citas/{id}/cancel',   [AppointmentController::class, 'cancel'], ['auth']);
 $router->post('/citas/{id}/status',   [AppointmentController::class, 'updateStatus'], ['auth']);   // cashier/superadmin
 $router->post('/citas/{id}/attended', [AppointmentController::class, 'markAttended'], ['auth']);   // doctor
+// marcar ausente (médico) - botón en la vista today
+$router->post('/citas/{id}/ausente',  [AppointmentController::class, 'markAbsent'], ['auth']);
 $router->post('/citas/{id}/payment',  [AppointmentController::class, 'updatePayment'], ['auth']);  // cashier
+
+// Atención de citas: mostrar formulario y procesar (médico)
+$router->get('/citas/{id}/attend',  [AppointmentController::class, 'attendForm'], ['auth']);
+$router->post('/citas/{id}/attend', [AppointmentController::class, 'attendStore'], ['auth']);
+
+// Editar cita (médico)
+$router->get('/citas/{id}/edit',  [AppointmentController::class, 'editForm'], ['auth']);
+$router->post('/citas/{id}/edit', [AppointmentController::class, 'editStore'], ['auth']);
 
 // Horarios Doctores (solo superadmin; el controlador valida el rol)
 $router->get('/doctor-schedules',          [DoctorScheduleController::class, 'index'],  ['auth']);

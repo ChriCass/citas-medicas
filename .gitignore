@@ -1,55 +1,39 @@
-# ====================================
-# .gitignore para Proyecto PHP MVC con Eloquent
-# ====================================
-
-# =====================================
-# ARCHIVOS DE CONFIGURACIÓN SENSIBLES
-# =====================================
 .env
 .env.local
 .env.production
 .env.staging
 *.env
 
-# =====================================
-# DEPENDENCIAS Y LIBRERÍAS
-# =====================================
+
 /vendor/
 composer.phar
 composer.lock
 
-# =====================================
-# ARCHIVOS DE BASE DE DATOS
-# =====================================
+
 *.bak
 *.sql.backup
 *.db
 *.sqlite
 *.sqlite3
 
-# Archivos de dump de BD
+
 dump.sql
 backup_*.sql
 database_backup_*
 
-# =====================================
-# LOGS Y ARCHIVOS TEMPORALES
-# =====================================
+
 /logs/
 *.log
 error.log
 access.log
 debug.log
 
-# Archivos temporales del sistema
+
 *.tmp
 *.temp
 .tmp/
 temp/
 
-# =====================================
-# CACHÉS Y COMPILADOS
-# =====================================
 /cache/
 /storage/cache/
 /storage/logs/
@@ -57,57 +41,19 @@ temp/
 /storage/framework/sessions/
 /storage/framework/views/
 
-# Cachés de PHP
+
 opcache/
 *.cache
 
-# =====================================
-# ARCHIVOS DEL SISTEMA OPERATIVO
-# =====================================
 
-# Windows
 Thumbs.db
 Desktop.ini
 *.lnk
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon?
-
-# Linux
-*~
-.directory
-
-# =====================================
-# EDITORES E IDEs
-# =====================================
 
 # Visual Studio Code
 .vscode/
 *.code-workspace
-
-# PhpStorm
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# Sublime Text
-*.sublime-project
-*.sublime-workspace
-
-# Vim
-*.swp
-*.swo
-*~
-
-# Emacs
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
 
 # =====================================
 # ARCHIVOS DE TESTING Y DESARROLLO
