@@ -20,7 +20,7 @@
   <?php endif; ?>
 
   <!-- Formulario -->
-  <form method="POST" action="/login" style="display: flex; flex-direction: column; gap: 1rem;">
+  <form method="POST" action="/login" style="display: flex; flex-direction: column; gap: 1rem;" onsubmit="return validateLoginForm(event, this);">
     <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
 
     <input name="email" type="email" placeholder="Email" required 
@@ -43,3 +43,58 @@
     </button>
   </form>
 </div>
+
+<script>
+// Función para validar formulario de login con SweetAlert2
+function validateLoginForm(event, form) {
+  event.preventDefault();
+  
+  const email = form.querySelector('input[name="email"]').value.trim();
+  const password = form.querySelector('input[name="password"]').value;
+  
+  if (!email) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Por favor ingresa tu email'
+    });
+    return false;
+  }
+  
+  if (!password) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Por favor ingresa tu contraseña'
+    });
+    return false;
+  }
+  
+  // Validar formato de email
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Por favor ingresa un email válido'
+    });
+    return false;
+  }
+  
+  // Mostrar loading
+  Swal.fire({
+    title: 'Iniciando sesión...',
+    text: 'Por favor espera',
+    allowOutsideClick: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+  
+  // Enviar formulario
+  form.submit();
+  
+  return false;
+}
+</script>

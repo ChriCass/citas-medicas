@@ -1,19 +1,23 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Model;
 
-class Cajero extends BaseModel
+class Cajero extends Model
 {
     protected $table = 'cajeros';
-    
     protected $fillable = ['usuario_id', 'nombre', 'usuario', 'contrasenia'];
     
-    protected $hidden = ['contrasenia'];
+    public $timestamps = false;
     
-    // Relaciones
-    public function user(): BelongsTo
+    public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');
+    }
+    
+    public function pagos()
+    {
+        return $this->hasMany(Payment::class, 'cajero_id');
     }
 }

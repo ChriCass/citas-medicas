@@ -1,119 +1,97 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Model;
 
-class Doctor extends BaseModel
+class Doctor extends Model
 {
     protected $table = 'doctores';
-    
     protected $fillable = [
         'usuario_id', 'especialidad_id', 'cmp', 'biografia'
     ];
     
-    // Relaciones
-    public function user(): BelongsTo
+    public $timestamps = false;
+    
+    public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');
     }
     
-    public function especialidad(): BelongsTo
+    public function especialidad()
     {
         return $this->belongsTo(Especialidad::class, 'especialidad_id');
     }
     
-    public function citas(): HasMany
+    public function citas()
     {
         return $this->hasMany(Appointment::class, 'doctor_id');
     }
     
-    public function sedes(): BelongsToMany
-    {
-        return $this->belongsToMany(Sede::class, 'doctor_sede', 'doctor_id', 'sede_id')
-                    ->withPivot('fecha_inicio', 'fecha_fin');
-    }
-    
-    public function horarios(): HasMany
+    public function horarios()
     {
         return $this->hasMany(DoctorSchedule::class, 'doctor_id');
     }
     
-    // Métodos estáticos para compatibilidad
-    public static function find(int $id): ?Doctor
+    public static function findByUsuarioId($usuarioId)
     {
-        return static::with(['user', 'especialidad'])->find($id);
-    }
-    
-    public static function findByUsuarioId(int $usuarioId): ?Doctor
-    {
-        return static::with(['user', 'especialidad'])->where('usuario_id', $usuarioId)->first();
-    }
-    
-    public static function create(int $usuarioId, ?int $especialidadId = null, ?string $cmp = null, ?string $biografia = null): int
-    {
-        $doctor = new static();
-        $doctor->usuario_id = $usuarioId;
-        $doctor->especialidad_id = $especialidadId;
-        $doctor->cmp = $cmp;
-        $doctor->biografia = $biografia;
-        $doctor->save();
+        $db = \App\Core\SimpleDatabase::getInstance();
         
-        return $doctor->id;
-    }
-    
-    public static function updateByUsuarioId(int $usuarioId, array $data): bool
-    {
-        $doctor = static::where('usuario_id', $usuarioId)->first();
+        $sql = "SELECT d.*, 
+                       u.nombre as user_nombre, u.apellido as user_apellido,
+                       e.nombre as especialidad_nombre, e.descripcion as especialidad_descripcion
+                FROM doctores d
+                LEFT JOIN usuarios u ON d.usuario_id = u.id
+                LEFT JOIN especialidades e ON d.especialidad_id = e.id
+                WHERE d.usuario_id = ?";
+        
+        $doctor = $db->fetchOne($sql, [$usuarioId]);
+        
         if (!$doctor) {
-            return false;
+            return null;
         }
         
-        return $doctor->update($data);
+        // Convertir a formato plano para la vista
+        return [
+            'id' => $doctor['id'],
+            'usuario_id' => $doctor['usuario_id'],
+            'especialidad_id' => $doctor['especialidad_id'],
+            'cmp' => $doctor['cmp'],
+            'biografia' => $doctor['biografia'],
+            'user_nombre' => $doctor['user_nombre'] ?? '',
+            'user_apellido' => $doctor['user_apellido'] ?? '',
+            'especialidad_nombre' => $doctor['especialidad_nombre'] ?? '',
+            'especialidad_descripcion' => $doctor['especialidad_descripcion'] ?? ''
+        ];
     }
     
-    public static function getAll(): \Illuminate\Database\Eloquent\Collection
+    public static function getAll()
     {
-        return static::with(['user', 'especialidad'])->orderBy('id')->get();
-    }
-    
-    public static function getByEspecialidad(int $especialidadId): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::with(['user', 'especialidad'])
-                     ->where('especialidad_id', $especialidadId)
-                     ->orderBy('id')
-                     ->get();
-    }
-    
-    // Accessors para compatibilidad
-    public function getNombreAttribute(): ?string
-    {
-        return $this->user?->nombre;
-    }
-    
-    public function getApellidoAttribute(): ?string
-    {
-        return $this->user?->apellido;
-    }
-    
-    public function getEmailAttribute(): ?string
-    {
-        return $this->user?->email;
-    }
-    
-    public function getTelefonoAttribute(): ?string
-    {
-        return $this->user?->telefono;
-    }
-    
-    public function getDniAttribute(): ?string
-    {
-        return $this->user?->dni;
-    }
-    
-    public function getEspecialidadNombreAttribute(): ?string
-    {
-        return $this->especialidad?->nombre;
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $sql = "SELECT d.*, 
+                       u.nombre as user_nombre, u.apellido as user_apellido,
+                       e.nombre as especialidad_nombre, e.descripcion as especialidad_descripcion
+                FROM doctores d
+                LEFT JOIN usuarios u ON d.usuario_id = u.id
+                LEFT JOIN especialidades e ON d.especialidad_id = e.id
+                ORDER BY u.nombre ASC";
+        
+        $doctors = $db->fetchAll($sql);
+        
+        // Convertir a formato plano para la vista
+        return array_map(function($doctor) {
+            return [
+                'id' => $doctor['id'],
+                'usuario_id' => $doctor['usuario_id'],
+                'especialidad_id' => $doctor['especialidad_id'],
+                'cmp' => $doctor['cmp'],
+                'biografia' => $doctor['biografia'],
+                'user_nombre' => $doctor['user_nombre'] ?? '',
+                'user_apellido' => $doctor['user_apellido'] ?? '',
+                'especialidad_nombre' => $doctor['especialidad_nombre'] ?? '',
+                'especialidad_descripcion' => $doctor['especialidad_descripcion'] ?? ''
+            ];
+        }, $doctors);
     }
 }

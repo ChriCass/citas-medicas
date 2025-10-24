@@ -36,17 +36,27 @@
         <?php foreach ($schedules as $h): ?>
           <tr>
             <td>
-              <?= htmlspecialchars($h['doctor_name'] ?? '') ?><br>
-              <small class="muted"><?= htmlspecialchars($h['doctor_email'] ?? '') ?></small>
+              <?= htmlspecialchars(($h['doctor_nombre'] ?? '') . ' ' . ($h['doctor_apellido'] ?? '')) ?><br>
+              <small class="muted">Doctor ID: <?= htmlspecialchars($h['doctor_id'] ?? '') ?></small>
             </td>
-            <td><?= htmlspecialchars($h['sede_nombre'] ?? 'Sin sede') ?></td>
+            <td><?= htmlspecialchars($h['nombre_sede'] ?? 'Sin sede') ?></td>
             <td>
               <?php 
                 $fecha = $h['fecha'] ?? '';
                 echo htmlspecialchars(date('d/m/Y', strtotime($fecha))); 
               ?>
             </td>
-            <td><?= htmlspecialchars($h['dia_nombre'] ?? '') ?></td>
+            <td>
+              <?php 
+                $fecha = $h['fecha'] ?? '';
+                if ($fecha) {
+                  $dias = ['Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes', 
+                           'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado'];
+                  $dia = $dias[date('l', strtotime($fecha))] ?? date('l', strtotime($fecha));
+                  echo htmlspecialchars($dia);
+                }
+              ?>
+            </td>
             <td><?= htmlspecialchars(substr((string)$h['hora_inicio'],0,5)) ?></td>
             <td><?= htmlspecialchars(substr((string)$h['hora_fin'],0,5)) ?></td>
             <td>
@@ -57,7 +67,7 @@
             <td><?= htmlspecialchars($h['observaciones'] ?? '') ?></td>
             <td>
               <form method="POST" action="/doctor-schedules/<?= (int)$h['id'] ?>/delete"
-                    onsubmit="return confirm('¿Eliminar este horario?');" style="display:inline">
+                    onsubmit="return confirmDeleteSchedule(event, this);" style="display:inline">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
                 <button type="submit" class="btn small danger">Eliminar</button>
               </form>
@@ -69,3 +79,27 @@
     </div>
   <?php endif; ?>
 </section>
+
+<script>
+// Función para confirmar eliminación de horario con SweetAlert2
+function confirmDeleteSchedule(event, form) {
+  event.preventDefault();
+  
+  Swal.fire({
+    title: '¿Eliminar horario?',
+    text: '¿Estás seguro de que deseas eliminar este horario? Esta acción no se puede deshacer.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      form.submit();
+    }
+  });
+  
+  return false;
+}
+</script>

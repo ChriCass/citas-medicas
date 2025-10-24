@@ -171,3 +171,123 @@ tbody tr:hover td { background: rgba(102,191,191,.06); }
   body.sidebar-collapsed .sidebar { transform: translateX(0%); }
   .mobile-only { display: inline-flex; }
 }
+
+/* ===== Estilos de Impresión ===== */
+@media print {
+  /* Ocultar elementos de navegación y UI */
+  .sidebar,
+  .topbar,
+  .sb-toggle,
+  .mobile-only,
+  .btn,
+  .form-actions,
+  nav,
+  .nav,
+  .actions {
+    display: none !important;
+  }
+  
+  /* Ajustar layout para impresión */
+  .with-sidebar {
+    display: block !important;
+    grid-template-columns: none !important;
+  }
+  
+  .page {
+    min-height: auto !important;
+  }
+  
+  .container {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Estilos para el comprobante de pago */
+  .receipt-container {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    background: white !important;
+    color: black !important;
+  }
+  
+  .receipt-header {
+    text-align: center;
+    border-bottom: 2px solid #333;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+  }
+  
+  .receipt-title {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 0 0 10px 0;
+  }
+  
+  .receipt-subtitle {
+    font-size: 14px;
+    color: #666;
+    margin: 0;
+  }
+  
+  .receipt-content {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  
+  .receipt-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+  }
+  
+  .receipt-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+  }
+  
+  .receipt-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  
+  .receipt-label {
+    font-weight: bold;
+    color: #555;
+  }
+  
+  .receipt-value {
+    color: #333;
+  }
+  
+  .receipt-footer {
+    margin-top: 30px;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    border-top: 1px solid #eee;
+    padding-top: 15px;
+  }
+  
+  /* Ocultar elementos específicos del comprobante */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Asegurar que el contenido se imprima en una página */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .card {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+}

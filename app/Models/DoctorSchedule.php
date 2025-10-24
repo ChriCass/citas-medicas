@@ -1,170 +1,113 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Model;
 
-class DoctorSchedule extends BaseModel
+class DoctorSchedule extends Model
 {
     protected $table = 'horarios_medicos';
-    
     protected $fillable = [
         'doctor_id', 'sede_id', 'fecha', 'hora_inicio', 
         'hora_fin', 'activo', 'observaciones'
     ];
     
-    protected $casts = [
-        'fecha' => 'date',
-        'hora_inicio' => 'datetime:H:i:s',
-        'hora_fin' => 'datetime:H:i:s',
-        'activo' => 'boolean'
-    ];
+    public $timestamps = false;
     
-    // Relaciones
-    public function doctor(): BelongsTo
+    public function doctor()
     {
         return $this->belongsTo(Doctor::class, 'doctor_id');
     }
     
-    public function sede(): BelongsTo
+    public function sede()
     {
         return $this->belongsTo(Sede::class, 'sede_id');
     }
     
-    // Scopes
-    public function scopeActive($query)
+    public static function listAll()
     {
-        return $query->where('activo', true);
-    }
-    
-    // Métodos estáticos para compatibilidad
-    public static function listAll(): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::with(['doctor.user', 'sede'])
-                     ->active()
-                     ->orderBy('fecha')
-                     ->orderBy('hora_inicio')
-                     ->get();
-    }
-    
-    public static function forDate(int $doctorId, int $locationId, string $date): \Illuminate\Database\Eloquent\Collection
-    {
-        $query = static::where('doctor_id', $doctorId)
-                       ->where('fecha', $date)
-                       ->active()
-                       ->orderBy('hora_inicio');
+        $db = \App\Core\SimpleDatabase::getInstance();
         
-        if ($locationId > 0) {
-            $query->where('sede_id', $locationId);
-        } else {
-            $query->whereNull('sede_id');
+        $sql = "SELECT hm.*, 
+                       du.nombre as doctor_nombre, du.apellido as doctor_apellido,
+                       s.nombre_sede
+                FROM horarios_medicos hm
+                LEFT JOIN doctores d ON hm.doctor_id = d.id
+                LEFT JOIN usuarios du ON d.usuario_id = du.id
+                LEFT JOIN sedes s ON hm.sede_id = s.id
+                ORDER BY hm.fecha DESC, hm.hora_inicio ASC";
+        
+        return $db->fetchAll($sql);
+    }
+    
+    public static function overlaps($doctorId, $sedeId, $fecha, $startTime, $endTime)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $sql = "SELECT * FROM horarios_medicos 
+                WHERE doctor_id = ? AND fecha = ? AND activo = 1";
+        $params = [$doctorId, $fecha];
+        
+        if ($sedeId) {
+            $sql .= " AND sede_id = ?";
+            $params[] = $sedeId;
         }
         
-        return $query->get();
-    }
-    
-    public static function forDateRange(int $doctorId, string $startDate, string $endDate): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::where('doctor_id', $doctorId)
-                     ->whereBetween('fecha', [$startDate, $endDate])
-                     ->active()
-                     ->orderBy('fecha')
-                     ->orderBy('hora_inicio')
-                     ->get();
-    }
-    
-    public static function create(int $doctorId, int $locationId, string $date, string $start, string $end, string $observaciones = null): int
-    {
-        $schedule = new static();
-        $schedule->doctor_id = $doctorId;
-        $schedule->sede_id = $locationId ?: null;
-        $schedule->fecha = $date;
-        $schedule->hora_inicio = $start;
-        $schedule->hora_fin = $end;
-        $schedule->observaciones = $observaciones;
-        $schedule->activo = true;
-        $schedule->save();
+        $existingSchedules = $db->fetchAll($sql, $params);
         
-        return $schedule->id;
-    }
-    
-    public static function deleteSchedule(int $id): bool
-    {
-        $schedule = static::find($id);
-        if (!$schedule) {
-            return false;
+        foreach ($existingSchedules as $schedule) {
+            $existingStart = strtotime($schedule['hora_inicio']);
+            $existingEnd = strtotime($schedule['hora_fin']);
+            $newStart = strtotime($startTime);
+            $newEnd = strtotime($endTime);
+            
+            // Verificar si hay solapamiento
+            if (($newStart < $existingEnd) && ($newEnd > $existingStart)) {
+                return true;
+            }
         }
         
-        $schedule->activo = false;
-        return $schedule->save();
+        return false;
     }
     
-    public static function hardDelete(int $id): bool
+    public static function createSchedule($doctorId, $sedeId, $fecha, $startTime, $endTime, $observaciones = '')
     {
-        $schedule = static::find($id);
-        if (!$schedule) {
-            return false;
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $data = [
+            'doctor_id' => $doctorId,
+            'sede_id' => $sedeId ?: null,
+            'fecha' => $fecha,
+            'hora_inicio' => $startTime,
+            'hora_fin' => $endTime,
+            'activo' => 1,
+            'observaciones' => $observaciones
+        ];
+        
+        return $db->insert('horarios_medicos', $data);
+    }
+    
+    public static function forDate($doctorId, $sedeId, $fecha)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $sql = "SELECT * FROM horarios_medicos 
+                WHERE doctor_id = ? AND fecha = ? AND activo = 1";
+        $params = [$doctorId, $fecha];
+        
+        if ($sedeId) {
+            $sql .= " AND sede_id = ?";
+            $params[] = $sedeId;
         }
         
-        return $schedule->delete();
-    }
-    
-    public static function overlaps(int $doctorId, int $locationId, string $date, string $start, string $end, int $excludeId = null): bool
-    {
-        $query = static::where('doctor_id', $doctorId)
-                       ->where('fecha', $date)
-                       ->active()
-                       ->where(function($q) use ($start, $end) {
-                           $q->where(function($sub) use ($start, $end) {
-                               $sub->where('hora_inicio', '<', $end)
-                                   ->where('hora_fin', '>', $start);
-                           });
-                       });
+        $sql .= " ORDER BY hora_inicio ASC";
         
-        if ($locationId > 0) {
-            $query->where('sede_id', $locationId);
-        } else {
-            $query->whereNull('sede_id');
-        }
-        
-        if ($excludeId) {
-            $query->where('id', '!=', $excludeId);
-        }
-        
-        return $query->exists();
+        return $db->fetchAll($sql, $params);
     }
     
-    public static function for(int $doctorId, int $locationId, int $weekday): array
+    public static function deleteSchedule($id)
     {
-        // Método obsoleto mantenido para compatibilidad
-        return [];
-    }
-    
-    // Accessors para compatibilidad
-    public function getDoctorNameAttribute(): ?string
-    {
-        return $this->doctor?->user?->nombre;
-    }
-    
-    public function getDoctorLastnameAttribute(): ?string
-    {
-        return $this->doctor?->user?->apellido;
-    }
-    
-    public function getDoctorEmailAttribute(): ?string
-    {
-        return $this->doctor?->user?->email;
-    }
-    
-    public function getSedeNombreAttribute(): ?string
-    {
-        return $this->sede?->nombre_sede;
-    }
-    
-    public function getDiaNombreAttribute(): ?string
-    {
-        $date = new \DateTime($this->fecha);
-        $days = ['Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes', 
-                 'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado'];
-        return $days[$date->format('l')] ?? $date->format('l');
+        $db = \App\Core\SimpleDatabase::getInstance();
+        return $db->delete('horarios_medicos', 'id = ?', [$id]);
     }
 }

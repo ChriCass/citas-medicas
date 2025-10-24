@@ -1,155 +1,132 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Capsule\Manager as DB;
+use Illuminate\Database\Eloquent\Model;
 
-class User extends BaseModel
+class User extends Model
 {
     protected $table = 'usuarios';
-    
     protected $fillable = [
-        'nombre', 'apellido', 'email', 'contrasenia', 
-        'dni', 'telefono', 'direccion'
+        'nombre', 'apellido', 'email', 'contrasenia', 'dni', 'telefono', 'direccion'
     ];
-    
     protected $hidden = ['contrasenia'];
     
-    // Relaciones
-    public function roles(): BelongsToMany
+    public $timestamps = false;
+    
+    public function roles()
     {
-        return $this->belongsToMany(Role::class, 'tiene_roles', 'usuario_id', 'rol_id')
-                    ->withPivot('creado_en');
+        return $this->belongsToMany(Role::class, 'tiene_roles', 'usuario_id', 'rol_id');
     }
     
-    public function doctor(): HasOne
-    {
-        return $this->hasOne(Doctor::class, 'usuario_id');
-    }
-    
-    public function paciente(): HasOne
+    public function paciente()
     {
         return $this->hasOne(Paciente::class, 'usuario_id');
     }
     
-    public function cajero(): HasOne
+    public function doctor()
+    {
+        return $this->hasOne(Doctor::class, 'usuario_id');
+    }
+    
+    public function cajero()
     {
         return $this->hasOne(Cajero::class, 'usuario_id');
     }
     
-    public function superadmin(): HasOne
+    public function getRoleName()
     {
-        return $this->hasOne(Superadmin::class, 'usuario_id');
-    }
-    
-    // Métodos estáticos para compatibilidad
-    public static function findByEmail(string $email): ?User
-    {
-        return static::with('roles')->where('email', $email)->first();
-    }
-    
-    public static function createUser(string $nombre, string $apellido, string $email, string $passwordHash, string $rol = 'paciente', ?string $dni = null, ?string $telefono = null): int
-    {
-        DB::beginTransaction();
+        $db = \App\Core\SimpleDatabase::getInstance();
+        $role = $db->fetchOne(
+            "SELECT r.nombre FROM roles r 
+             INNER JOIN tiene_roles tr ON r.id = tr.rol_id 
+             WHERE tr.usuario_id = ?", 
+            [$this->id]
+        );
         
-        try {
-            // Crear usuario
-            $user = new static();
-            $user->nombre = $nombre;
-            $user->apellido = $apellido;
-            $user->email = $email;
-            $user->contrasenia = $passwordHash;
-            $user->dni = $dni;
-            $user->telefono = $telefono;
-            $user->save();
+        return $role ? $role['nombre'] : 'usuario';
+    }
+    
+    public function verifyPassword($password)
+    {
+        return password_verify($password, $this->contrasenia);
+    }
+    
+    public static function findByEmail($email)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        $userData = $db->fetchOne("SELECT * FROM usuarios WHERE email = ?", [$email]);
+        
+        if (!$userData) {
+            return null;
+        }
+        
+        // Crear una instancia de User con los datos obtenidos
+        $user = new static();
+        foreach ($userData as $key => $value) {
+            $user->$key = $value;
+        }
+        
+        return $user;
+    }
+    
+    public static function patients($search = null, $limit = 100)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $sql = "SELECT u.*, p.id as paciente_id
+                FROM usuarios u
+                INNER JOIN pacientes p ON u.id = p.usuario_id
+                INNER JOIN tiene_roles tr ON u.id = tr.usuario_id
+                INNER JOIN roles r ON tr.rol_id = r.id
+                WHERE r.nombre = 'paciente'";
+        
+        $params = [];
+        
+        if ($search) {
+            $sql .= " AND (u.nombre LIKE ? OR u.apellido LIKE ? OR u.dni LIKE ?)";
+            $searchTerm = "%{$search}%";
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+            $params[] = $searchTerm;
+        }
+        
+        // Detectar el tipo de base de datos para usar la sintaxis correcta
+        $dbType = $db->getConnectionType();
+        if ($dbType === 'sqlsrv') {
+            $sql .= " ORDER BY u.nombre ASC";
+            // SQL Server no tiene LIMIT, usamos TOP
+            $sql = "SELECT TOP " . (int)$limit . " u.*, p.id as paciente_id
+                    FROM usuarios u
+                    INNER JOIN pacientes p ON u.id = p.usuario_id
+                    INNER JOIN tiene_roles tr ON u.id = tr.usuario_id
+                    INNER JOIN roles r ON tr.rol_id = r.id
+                    WHERE r.nombre = 'paciente'";
             
-            // Obtener rol
-            $roleModel = Role::where('nombre', $rol)->first();
-            if (!$roleModel) {
-                throw new \Exception("Rol no encontrado: $rol");
+            if ($search) {
+                $sql .= " AND (u.nombre LIKE ? OR u.apellido LIKE ? OR u.dni LIKE ?)";
             }
-            
-            // Asignar rol
-            $user->roles()->attach($roleModel->id);
-            
-            DB::commit();
-            return $user->id;
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
-    }
-    
-    public static function findById(int $id): ?User
-    {
-        return static::with('roles')->find($id);
-    }
-    
-    public function hasRole(string $rol): bool
-    {
-        return $this->roles->contains('nombre', $rol);
-    }
-    
-    public function getRoles(): array
-    {
-        return $this->roles->pluck('nombre')->toArray();
-    }
-    
-    public function getRoleName(): ?string
-    {
-        return $this->roles->first()?->nombre;
-    }
-    
-    // Scopes para selectores
-    public function scopePatients($query, ?string $term = null, int $limit = 100)
-    {
-        return $this->scopeUsersByRole($query, 'paciente', $term, $limit);
-    }
-    
-    public function scopeDoctors($query, ?string $term = null, int $limit = 100)
-    {
-        return $this->scopeUsersByRole($query, 'doctor', $term, $limit);
-    }
-    
-    public function scopeUsersByRole($query, string $rol, ?string $term = null, int $limit = 100)
-    {
-        $query = $query->whereHas('roles', function($q) use ($rol) {
-            $q->where('nombre', $rol);
-        });
-        
-        if ($term !== null && $term !== '') {
-            $query->where(function($q) use ($term) {
-                $q->where('nombre', 'LIKE', "%{$term}%")
-                  ->orWhere('apellido', 'LIKE', "%{$term}%")
-                  ->orWhere('email', 'LIKE', "%{$term}%");
-            });
+            $sql .= " ORDER BY u.nombre ASC";
+        } else {
+            $sql .= " ORDER BY u.nombre ASC LIMIT ?";
+            $params[] = $limit;
         }
         
-        return $query->orderBy('nombre')->limit($limit);
-    }
-    
-    // Métodos estáticos de conveniencia
-    public static function patients(?string $term = null, int $limit = 100): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::query()->patients($term, $limit)->get();
-    }
-    
-    public static function doctors(?string $term = null, int $limit = 100): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::query()->doctors($term, $limit)->get();
-    }
-    
-    // Getter para compatibilidad con código existente
-    public function getRolNombreAttribute(): ?string
-    {
-        return $this->getRoleName();
-    }
-    
-    // Mantener método create original para compatibilidad
-    public static function create(string $nombre, string $apellido, string $email, string $passwordHash, string $rol = 'paciente', ?string $dni = null, ?string $telefono = null): int
-    {
-        return static::createUser($nombre, $apellido, $email, $passwordHash, $rol, $dni, $telefono);
+        $usuarios = $db->fetchAll($sql, $params);
+        
+        // Convertir a formato plano para la vista
+        return array_map(function($usuario) {
+            return [
+                'id' => $usuario['usuario_id'] ?? $usuario['id'],
+                'usuario_id' => $usuario['id'],
+                'nombre' => $usuario['nombre'],
+                'apellido' => $usuario['apellido'],
+                'email' => $usuario['email'],
+                'dni' => $usuario['dni'],
+                'telefono' => $usuario['telefono'],
+                'direccion' => $usuario['direccion'],
+                'paciente_id' => $usuario['paciente_id']
+            ];
+        }, $usuarios);
     }
 }

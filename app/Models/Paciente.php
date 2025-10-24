@@ -1,93 +1,54 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Model;
 
-class Paciente extends BaseModel
+class Paciente extends Model
 {
     protected $table = 'pacientes';
-    
     protected $fillable = [
-        'usuario_id', 'tipo_sangre', 'alergias', 'condicion_cronica', 
-        'historial_cirugias', 'historico_familiar', 'observaciones',
-        'contacto_emergencia_nombre', 'contacto_emergencia_telefono', 
+        'usuario_id', 'numero_historia_clinica', 'tipo_sangre', 'alergias',
+        'condicion_cronica', 'historial_cirugias', 'historico_familiar',
+        'observaciones', 'contacto_emergencia_nombre', 'contacto_emergencia_telefono',
         'contacto_emergencia_relacion'
     ];
     
-    // Relaciones
-    public function user(): BelongsTo
+    public $timestamps = false;
+    
+    public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');
     }
     
-    public function citas(): HasMany
+    public function citas()
     {
         return $this->hasMany(Appointment::class, 'paciente_id');
     }
     
-    // Métodos estáticos para compatibilidad
-    public static function findByUsuarioId(int $usuarioId): ?Paciente
+    public static function findByUsuarioId($usuarioId)
     {
-        return static::with('user')->where('usuario_id', $usuarioId)->first();
-    }
-    
-    public static function create(int $usuarioId, ?string $tipoSangre = null, ?string $alergias = null, ?string $condicionCronica = null, ?string $historialCirugias = null, ?string $historicoFamiliar = null, ?string $observaciones = null, ?string $contactoEmergenciaNombre = null, ?string $contactoEmergenciaTelefono = null, ?string $contactoEmergenciaRelacion = null): int
-    {
-        $paciente = new static();
-        $paciente->usuario_id = $usuarioId;
-        $paciente->tipo_sangre = $tipoSangre;
-        $paciente->alergias = $alergias;
-        $paciente->condicion_cronica = $condicionCronica;
-        $paciente->historial_cirugias = $historialCirugias;
-        $paciente->historico_familiar = $historicoFamiliar;
-        $paciente->observaciones = $observaciones;
-        $paciente->contacto_emergencia_nombre = $contactoEmergenciaNombre;
-        $paciente->contacto_emergencia_telefono = $contactoEmergenciaTelefono;
-        $paciente->contacto_emergencia_relacion = $contactoEmergenciaRelacion;
-        $paciente->save();
+        $db = \App\Core\SimpleDatabase::getInstance();
+        $paciente = $db->fetchOne("SELECT * FROM pacientes WHERE usuario_id = ?", [$usuarioId]);
         
-        return $paciente->id;
-    }
-    
-    public static function updateByUsuarioId(int $usuarioId, array $data): bool
-    {
-        $paciente = static::where('usuario_id', $usuarioId)->first();
         if (!$paciente) {
-            return false;
+            return null;
         }
         
-        return $paciente->update($data);
-    }
-    
-    public static function getAll(): \Illuminate\Database\Eloquent\Collection
-    {
-        return static::with('user')->orderBy('id')->get();
-    }
-    
-    // Accessors para compatibilidad
-    public function getNombreAttribute(): ?string
-    {
-        return $this->user?->nombre;
-    }
-    
-    public function getApellidoAttribute(): ?string
-    {
-        return $this->user?->apellido;
-    }
-    
-    public function getEmailAttribute(): ?string
-    {
-        return $this->user?->email;
-    }
-    
-    public function getTelefonoAttribute(): ?string
-    {
-        return $this->user?->telefono;
-    }
-    
-    public function getDniAttribute(): ?string
-    {
-        return $this->user?->dni;
+        // Convertir a formato plano para la vista
+        return [
+            'id' => $paciente['id'],
+            'usuario_id' => $paciente['usuario_id'],
+            'numero_historia_clinica' => $paciente['numero_historia_clinica'] ?? '',
+            'tipo_sangre' => $paciente['tipo_sangre'] ?? '',
+            'alergias' => $paciente['alergias'] ?? '',
+            'condicion_cronica' => $paciente['condicion_cronica'] ?? '',
+            'historial_cirugias' => $paciente['historial_cirugias'] ?? '',
+            'historico_familiar' => $paciente['historico_familiar'] ?? '',
+            'observaciones' => $paciente['observaciones'] ?? '',
+            'contacto_emergencia_nombre' => $paciente['contacto_emergencia_nombre'] ?? '',
+            'contacto_emergencia_telefono' => $paciente['contacto_emergencia_telefono'] ?? '',
+            'contacto_emergencia_relacion' => $paciente['contacto_emergencia_relacion'] ?? ''
+        ];
     }
 }

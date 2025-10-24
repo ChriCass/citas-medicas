@@ -84,7 +84,7 @@ php -S localhost:8000 -t public
 ### 9. Acceder al Sistema
 - **URL**: http://localhost:8000
 - **Usuarios Demo** (password: `password`):
-  - superadmin@clinicasanjose.com
+  - super@clinicasanjose.com
   - doctor@clinicasanjose.com  
   - paciente@clinicasanjose.com
   - cajero@clinicasanjose.com

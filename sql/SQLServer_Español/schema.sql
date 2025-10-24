@@ -12,9 +12,10 @@ END
 GO
 
 CREATE DATABASE med_database_v5;
-
+GO
 
 USE med_database_v5;
+GO
 
 -- ===== TABLAS =====
 
@@ -94,6 +95,7 @@ BEGIN
 CREATE TABLE pacientes (
 id INT IDENTITY(1,1) PRIMARY KEY,
 usuario_id INT NOT NULL UNIQUE, -- Un usuario solo puede ser un paciente
+numero_historia_clinica NVARCHAR(20) NULL UNIQUE,
 tipo_sangre NVARCHAR(10) NULL,
 alergias NVARCHAR(MAX) NULL,
 condicion_cronica NVARCHAR(MAX) NULL,
@@ -161,18 +163,25 @@ hora_inicio TIME NOT NULL,
 hora_fin TIME NOT NULL,
 razon NVARCHAR(255) NULL,
 estado NVARCHAR(50) DEFAULT 'pendiente',
+pago NVARCHAR(50) DEFAULT 'pendiente',
 creado_en DATETIME DEFAULT GETDATE(),
 CONSTRAINT fk_cita_paciente FOREIGN KEY (paciente_id) REFERENCES pacientes(id) ON DELETE NO ACTION,
 CONSTRAINT fk_cita_doctor FOREIGN KEY (doctor_id) REFERENCES doctores(id) ON DELETE NO ACTION,
-CONSTRAINT fk_cita_sede FOREIGN KEY (sede_id) REFERENCES sedes(id) ON DELETE SET NULL
+CONSTRAINT fk_cita_sede FOREIGN KEY (sede_id) REFERENCES sedes(id) ON DELETE SET NULL,
+CONSTRAINT ck_cita_estado CHECK (estado IN ('pendiente', 'confirmado', 'atendido', 'cancelado')),
+CONSTRAINT ck_cita_pago CHECK (pago IN ('pendiente', 'pagado', 'rechazado'))
 );
 
 CREATE INDEX idx_cita_fecha ON citas(fecha);
+CREATE INDEX idx_cita_estado ON citas(estado);
+CREATE INDEX idx_cita_pago ON citas(pago);
 
--- CRUCIAL: Se añade un índice UNIQUE filtrado para evitar el doble-booking
--- Solo aplica a citas que no estén canceladas, asegurando que un doctor no tenga
--- dos citas en el mismo inicio de slot (fecha + hora_inicio).
-CREATE UNIQUE INDEX uq_cita_doctor_slot ON citas (doctor_id, fecha, hora_inicio) WHERE estado != 'cancelada';
+-- CRUCIAL: Se añade un índice UNIQUE para evitar el doble-booking
+-- Asegurando que un doctor no tenga dos citas en el mismo inicio de slot (fecha + hora_inicio)
+-- Nota: Para versiones de SQL Server 2008+, se puede usar un índice filtrado
+-- CREATE UNIQUE INDEX uq_cita_doctor_slot ON citas (doctor_id, fecha, hora_inicio) WHERE estado != 'cancelada';
+-- Para compatibilidad, usamos un índice normal
+CREATE UNIQUE INDEX uq_cita_doctor_slot ON citas (doctor_id, fecha, hora_inicio);
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'consultas') AND type = N'U')
@@ -218,6 +227,33 @@ CONSTRAINT fk_cajero_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON
 );
 END;
 
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'pagos') AND type = N'U')
+BEGIN
+CREATE TABLE pagos (
+id INT IDENTITY(1,1) PRIMARY KEY,
+cita_id INT NOT NULL,
+cajero_id INT NOT NULL,
+monto DECIMAL(10,2) NOT NULL,
+metodo_pago NVARCHAR(50) NOT NULL DEFAULT 'efectivo',
+estado NVARCHAR(50) NOT NULL DEFAULT 'completado',
+fecha_pago DATETIME NOT NULL DEFAULT GETDATE(),
+comprobante NVARCHAR(255) NULL,
+observaciones NVARCHAR(MAX) NULL,
+creado_en DATETIME DEFAULT GETDATE(),
+actualizado_en DATETIME DEFAULT GETDATE(),
+CONSTRAINT fk_pago_cita FOREIGN KEY (cita_id) REFERENCES citas(id) ON DELETE CASCADE,
+CONSTRAINT fk_pago_cajero FOREIGN KEY (cajero_id) REFERENCES cajeros(id) ON DELETE CASCADE,
+CONSTRAINT ck_pago_monto CHECK (monto > 0),
+CONSTRAINT ck_pago_metodo CHECK (metodo_pago IN ('efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'cheque')),
+CONSTRAINT ck_pago_estado CHECK (estado IN ('pendiente', 'completado', 'rechazado'))
+);
+
+CREATE INDEX idx_pago_cita ON pagos(cita_id);
+CREATE INDEX idx_pago_cajero ON pagos(cajero_id);
+CREATE INDEX idx_pago_fecha ON pagos(fecha_pago);
+CREATE INDEX idx_pago_estado ON pagos(estado);
+END;
+
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'superadmins') AND type = N'U')
 BEGIN
 CREATE TABLE superadmins (
@@ -247,11 +283,16 @@ WHERE NOT EXISTS (SELECT 1 FROM especialidades e WHERE e.nombre = v.nombre);
 
 INSERT INTO sedes (nombre_sede, direccion, telefono)
 SELECT v.nombre_sede, v.direccion, v.telefono FROM (VALUES
-('Clínica San José - Sede Central','Av. Javier Prado Este 4200, San Isidro, Lima','01-234-5678'),
-('Clínica San José - Sede Norte','Av. Túpac Amaru 1234, Independencia, Lima','01-234-5679'),
-('Clínica San José - Sede Sur','Av. El Sol 567, Villa El Salvador, Lima','01-234-5680'),
-('Clínica San José - Sede Este','Av. La Molina 890, La Molina, Lima','01-234-5681'),
-('Clínica San José - Sede Oeste','Av. Universitaria 2345, San Miguel, Lima','01-234-5682')
+('Clínica Internacional - Sede San Isidro','Av. Javier Prado Este 4200, San Isidro, Lima','01-234-5678'),
+('Clínica Internacional - Sede Miraflores','Av. Angamos Este 1234, Miraflores, Lima','01-234-5679'),
+('Clínica Internacional - Sede Surco','Av. Benavides 3456, Surco, Lima','01-234-5680'),
+('Clínica Internacional - Sede La Molina','Av. La Molina 7890, La Molina, Lima','01-234-5681'),
+('Clínica Internacional - Sede San Borja','Av. Primavera 2345, San Borja, Lima','01-234-5682'),
+('Clínica Internacional - Sede Jesús María','Av. Salaverry 1234, Jesús María, Lima','01-234-5683'),
+('Clínica Internacional - Sede San Miguel','Av. Universitaria 4567, San Miguel, Lima','01-234-5684'),
+('Clínica Internacional - Sede Magdalena','Av. Brasil 8901, Magdalena, Lima','01-234-5685'),
+('Clínica Internacional - Sede Independencia','Av. Túpac Amaru 2345, Independencia, Lima','01-234-5686'),
+('Clínica Internacional - Sede Villa El Salvador','Av. El Sol 5678, Villa El Salvador, Lima','01-234-5687')
 ) v(nombre_sede,direccion,telefono)
 WHERE NOT EXISTS (SELECT 1 FROM sedes s WHERE s.nombre_sede = v.nombre_sede);
 
@@ -326,34 +367,35 @@ SELECT v.* FROM (VALUES
 ) v(usuario_id,especialidad_id,cmp,biografia)
 WHERE NOT EXISTS (SELECT 1 FROM doctores d WHERE d.usuario_id = v.usuario_id);
 
-INSERT INTO pacientes (usuario_id, tipo_sangre, alergias, condicion_cronica, historial_cirugias, historico_familiar, observaciones, contacto_emergencia_nombre, contacto_emergencia_telefono, contacto_emergencia_relacion)
+INSERT INTO pacientes (usuario_id, numero_historia_clinica, tipo_sangre, alergias, condicion_cronica, historial_cirugias, historico_familiar, observaciones, contacto_emergencia_nombre, contacto_emergencia_telefono, contacto_emergencia_relacion)
 SELECT v.* FROM (VALUES
-(18,'O+','Penicilina','Hipertensión arterial','Apendicectomía (2015)','Padre diabético, madre hipertensa','Paciente controlada, toma medicación diaria','Juan García','999-000-030','Esposo'),
-(19,'A+','Ninguna','Diabetes tipo 2','Colecistectomía (2018)','Madre diabética','Control glucémico regular','María Martínez','999-000-031','Hija'),
-(20,'B+','Sulfamidas','Asma bronquial','Ninguna','Hermano asmático','Usa inhalador de rescate','Carlos Vargas','999-000-032','Hermano'),
-(21,'AB+','Ninguna','Ninguna','Cesárea (2020)','Abuela con cáncer de mama','Embarazo controlado','Pedro Ramírez','999-000-033','Esposo'),
-(22,'O-','Mariscos','Artritis reumatoide','Artroscopia rodilla (2019)','Madre con artritis','En tratamiento con inmunosupresores','Rosa Jiménez','999-000-034','Hija'),
-(23,'A-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sano','Miguel Sánchez','999-000-035','Padre'),
-(24,'B-','Polen','Migraña','Ninguna','Madre migrañosa','Crisis controladas con medicación','Elena Castro','999-000-036','Madre'),
-(25,'O+','Ninguna','Hipotiroidismo','Tiroidectomía (2017)','Madre con enfermedad tiroidea','En tratamiento con levotiroxina','Ana Torres','999-000-037','Hermana'),
-(26,'A+','Ibuprofeno','Gastritis crónica','Ninguna','Padre con úlcera gástrica','Evita AINEs, dieta blanda','Luis Herrera','999-000-038','Esposo'),
-(27,'B+','Ninguna','Ninguna','Apendicectomía (2019)','Ninguna','Paciente sana, controles regulares','Patricia Díaz','999-000-039','Madre'),
-(28,'AB+','Polen, ácaros','Rinitis alérgica','Ninguna','Padre alérgico','Uso de antihistamínicos estacionales','Roberto Morales','999-000-040','Padre'),
-(29,'O-','Ninguna','Obesidad','Cirugía bariátrica (2021)','Familia con sobrepeso','Seguimiento nutricional post-cirugía','Sandra Rojas','999-000-041','Hermana'),
-(30,'A-','Penicilina','Depresión','Ninguna','Madre con depresión','En tratamiento psiquiátrico','Fernando López','999-000-042','Esposo'),
-(31,'B-','Ninguna','Ninguna','Colecistectomía (2020)','Ninguna','Paciente sana, sin patologías','Lucía García','999-000-043','Madre'),
-(32,'O+','Mariscos, frutos secos','Dermatitis atópica','Ninguna','Hermano con eczema','Cuidado especial de la piel','Diego Martínez','999-000-044','Padre'),
-(33,'A+','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sana, deportista','Valeria Silva','999-000-045','Madre'),
-(34,'B+','Polen','Asma leve','Ninguna','Padre asmático','Inhalador preventivo','Andrés Vargas','999-000-046','Hermano'),
-(35,'AB-','Ninguna','Ninguna','Cesárea (2022)','Madre con diabetes gestacional','Control post-parto','Natalia Ramírez','999-000-047','Esposo'),
-(36,'O-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sano, joven','Sebastián Castro','999-000-048','Padre'),
-(37,'A-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sana, controles preventivos','Gabriela Jiménez','999-000-049','Madre')
-) v(usuario_id,tipo_sangre,alergias,condicion_cronica,historial_cirugias,historico_familiar,observaciones,contacto_emergencia_nombre,contacto_emergencia_telefono,contacto_emergencia_relacion)
+(18,'HC-001','O+','Penicilina','Hipertensión arterial','Apendicectomía (2015)','Padre diabético, madre hipertensa','Paciente controlada, toma medicación diaria','Juan García','999-000-030','Esposo'),
+(19,'HC-002','A+','Ninguna','Diabetes tipo 2','Colecistectomía (2018)','Madre diabética','Control glucémico regular','María Martínez','999-000-031','Hija'),
+(20,'HC-003','B+','Sulfamidas','Asma bronquial','Ninguna','Hermano asmático','Usa inhalador de rescate','Carlos Vargas','999-000-032','Hermano'),
+(21,'HC-004','AB+','Ninguna','Ninguna','Cesárea (2020)','Abuela con cáncer de mama','Embarazo controlado','Pedro Ramírez','999-000-033','Esposo'),
+(22,'HC-005','O-','Mariscos','Artritis reumatoide','Artroscopia rodilla (2019)','Madre con artritis','En tratamiento con inmunosupresores','Rosa Jiménez','999-000-034','Hija'),
+(23,'HC-006','A-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sano','Miguel Sánchez','999-000-035','Padre'),
+(24,'HC-007','B-','Polen','Migraña','Ninguna','Madre migrañosa','Crisis controladas con medicación','Elena Castro','999-000-036','Madre'),
+(25,'HC-008','O+','Ninguna','Hipotiroidismo','Tiroidectomía (2017)','Madre con enfermedad tiroidea','En tratamiento con levotiroxina','Ana Torres','999-000-037','Hermana'),
+(26,'HC-009','A+','Ibuprofeno','Gastritis crónica','Ninguna','Padre con úlcera gástrica','Evita AINEs, dieta blanda','Luis Herrera','999-000-038','Esposo'),
+(27,'HC-010','B+','Ninguna','Ninguna','Apendicectomía (2019)','Ninguna','Paciente sana, controles regulares','Patricia Díaz','999-000-039','Madre'),
+(28,'HC-011','AB+','Polen, ácaros','Rinitis alérgica','Ninguna','Padre alérgico','Uso de antihistamínicos estacionales','Roberto Morales','999-000-040','Padre'),
+(29,'HC-012','O-','Ninguna','Obesidad','Cirugía bariátrica (2021)','Familia con sobrepeso','Seguimiento nutricional post-cirugía','Sandra Rojas','999-000-041','Hermana'),
+(30,'HC-013','A-','Penicilina','Depresión','Ninguna','Madre con depresión','En tratamiento psiquiátrico','Fernando López','999-000-042','Esposo'),
+(31,'HC-014','B-','Ninguna','Ninguna','Colecistectomía (2020)','Ninguna','Paciente sana, sin patologías','Lucía García','999-000-043','Madre'),
+(32,'HC-015','O+','Mariscos, frutos secos','Dermatitis atópica','Ninguna','Hermano con eczema','Cuidado especial de la piel','Diego Martínez','999-000-044','Padre'),
+(33,'HC-016','A+','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sana, deportista','Valeria Silva','999-000-045','Madre'),
+(34,'HC-017','B+','Polen','Asma leve','Ninguna','Padre asmático','Inhalador preventivo','Andrés Vargas','999-000-046','Hermano'),
+(35,'HC-018','AB-','Ninguna','Ninguna','Cesárea (2022)','Madre con diabetes gestacional','Control post-parto','Natalia Ramírez','999-000-047','Esposo'),
+(36,'HC-019','O-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sano, joven','Sebastián Castro','999-000-048','Padre'),
+(37,'HC-020','A-','Ninguna','Ninguna','Ninguna','Ninguna','Paciente sana, controles preventivos','Gabriela Jiménez','999-000-049','Madre')
+) v(usuario_id,numero_historia_clinica,tipo_sangre,alergias,condicion_cronica,historial_cirugias,historico_familiar,observaciones,contacto_emergencia_nombre,contacto_emergencia_telefono,contacto_emergencia_relacion)
 WHERE NOT EXISTS (SELECT 1 FROM pacientes p WHERE p.usuario_id = v.usuario_id);
 
 INSERT INTO cajeros (usuario_id, nombre, usuario, contrasenia)
 SELECT 37,'Carlos López','cajero','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'
 WHERE NOT EXISTS (SELECT 1 FROM cajeros c WHERE c.usuario_id=37);
+
 
 INSERT INTO superadmins (usuario_id, nombre, usuario, contrasenia)
 SELECT v.* FROM (VALUES
@@ -421,7 +463,103 @@ SELECT v.* FROM (VALUES
 (3,5,'2025-10-20','09:00:00','13:00:00'),(3,5,'2025-10-22','09:00:00','13:00:00'),(3,5,'2025-10-24','09:00:00','13:00:00'),
 (3,2,'2025-10-28','08:30:00','12:30:00'),(3,2,'2025-10-28','14:30:00','18:30:00'),
 (3,2,'2025-10-30','08:30:00','12:30:00'),(3,2,'2025-10-30','14:30:00','18:30:00'),
-(3,5,'2025-10-27','09:00:00','13:00:00'),(3,5,'2025-10-29','09:00:00','13:00:00'),(3,5,'2025-10-31','09:00:00','13:00:00')
+(3,5,'2025-10-27','09:00:00','13:00:00'),(3,5,'2025-10-29','09:00:00','13:00:00'),(3,5,'2025-10-31','09:00:00','13:00:00'),
+
+-- Dr. Carlos (doctor_id=4) - Cardiología
+(4,1,'2025-10-13','08:00:00','12:00:00'),(4,1,'2025-10-15','08:00:00','12:00:00'),(4,1,'2025-10-17','08:00:00','12:00:00'),
+(4,3,'2025-10-14','14:00:00','18:00:00'),(4,3,'2025-10-16','14:00:00','18:00:00'),
+(4,1,'2025-10-20','08:00:00','12:00:00'),(4,1,'2025-10-22','08:00:00','12:00:00'),(4,1,'2025-10-24','08:00:00','12:00:00'),
+(4,3,'2025-10-21','14:00:00','18:00:00'),(4,3,'2025-10-23','14:00:00','18:00:00'),
+(4,1,'2025-10-27','08:00:00','12:00:00'),(4,1,'2025-10-29','08:00:00','12:00:00'),(4,1,'2025-10-31','08:00:00','12:00:00'),
+(4,3,'2025-10-28','14:00:00','18:00:00'),(4,3,'2025-10-30','14:00:00','18:00:00'),
+
+-- Dra. Ana (doctor_id=5) - Dermatología
+(5,2,'2025-10-13','09:00:00','13:00:00'),(5,2,'2025-10-15','09:00:00','13:00:00'),(5,2,'2025-10-17','09:00:00','13:00:00'),
+(5,4,'2025-10-14','15:00:00','19:00:00'),(5,4,'2025-10-16','15:00:00','19:00:00'),
+(5,2,'2025-10-20','09:00:00','13:00:00'),(5,2,'2025-10-22','09:00:00','13:00:00'),(5,2,'2025-10-24','09:00:00','13:00:00'),
+(5,4,'2025-10-21','15:00:00','19:00:00'),(5,4,'2025-10-23','15:00:00','19:00:00'),
+(5,2,'2025-10-27','09:00:00','13:00:00'),(5,2,'2025-10-29','09:00:00','13:00:00'),(5,2,'2025-10-31','09:00:00','13:00:00'),
+(5,4,'2025-10-28','15:00:00','19:00:00'),(5,4,'2025-10-30','15:00:00','19:00:00'),
+
+-- Dr. Luis (doctor_id=6) - Pediatría
+(6,1,'2025-10-13','08:30:00','12:30:00'),(6,1,'2025-10-14','08:30:00','12:30:00'),(6,1,'2025-10-15','08:30:00','12:30:00'),
+(6,5,'2025-10-16','14:30:00','18:30:00'),(6,5,'2025-10-17','14:30:00','18:30:00'),
+(6,1,'2025-10-20','08:30:00','12:30:00'),(6,1,'2025-10-21','08:30:00','12:30:00'),(6,1,'2025-10-22','08:30:00','12:30:00'),
+(6,5,'2025-10-23','14:30:00','18:30:00'),(6,5,'2025-10-24','14:30:00','18:30:00'),
+(6,1,'2025-10-27','08:30:00','12:30:00'),(6,1,'2025-10-28','08:30:00','12:30:00'),(6,1,'2025-10-29','08:30:00','12:30:00'),
+(6,5,'2025-10-30','14:30:00','18:30:00'),(6,5,'2025-10-31','14:30:00','18:30:00'),
+
+-- Dra. Carmen (doctor_id=7) - Ginecología
+(7,2,'2025-10-13','10:00:00','14:00:00'),(7,2,'2025-10-15','10:00:00','14:00:00'),(7,2,'2025-10-17','10:00:00','14:00:00'),
+(7,6,'2025-10-14','16:00:00','20:00:00'),(7,6,'2025-10-16','16:00:00','20:00:00'),
+(7,2,'2025-10-20','10:00:00','14:00:00'),(7,2,'2025-10-22','10:00:00','14:00:00'),(7,2,'2025-10-24','10:00:00','14:00:00'),
+(7,6,'2025-10-21','16:00:00','20:00:00'),(7,6,'2025-10-23','16:00:00','20:00:00'),
+(7,2,'2025-10-27','10:00:00','14:00:00'),(7,2,'2025-10-29','10:00:00','14:00:00'),(7,2,'2025-10-31','10:00:00','14:00:00'),
+(7,6,'2025-10-28','16:00:00','20:00:00'),(7,6,'2025-10-30','16:00:00','20:00:00'),
+
+-- Dr. Miguel (doctor_id=8) - Traumatología
+(8,3,'2025-10-13','08:00:00','12:00:00'),(8,3,'2025-10-14','08:00:00','12:00:00'),(8,3,'2025-10-15','08:00:00','12:00:00'),
+(8,7,'2025-10-16','14:00:00','18:00:00'),(8,7,'2025-10-17','14:00:00','18:00:00'),
+(8,3,'2025-10-20','08:00:00','12:00:00'),(8,3,'2025-10-21','08:00:00','12:00:00'),(8,3,'2025-10-22','08:00:00','12:00:00'),
+(8,7,'2025-10-23','14:00:00','18:00:00'),(8,7,'2025-10-24','14:00:00','18:00:00'),
+(8,3,'2025-10-27','08:00:00','12:00:00'),(8,3,'2025-10-28','08:00:00','12:00:00'),(8,3,'2025-10-29','08:00:00','12:00:00'),
+(8,7,'2025-10-30','14:00:00','18:00:00'),(8,7,'2025-10-31','14:00:00','18:00:00'),
+
+-- Dra. Patricia (doctor_id=9) - Neurología
+(9,4,'2025-10-13','09:30:00','13:30:00'),(9,4,'2025-10-15','09:30:00','13:30:00'),(9,4,'2025-10-17','09:30:00','13:30:00'),
+(9,8,'2025-10-14','15:30:00','19:30:00'),(9,8,'2025-10-16','15:30:00','19:30:00'),
+(9,4,'2025-10-20','09:30:00','13:30:00'),(9,4,'2025-10-22','09:30:00','13:30:00'),(9,4,'2025-10-24','09:30:00','13:30:00'),
+(9,8,'2025-10-21','15:30:00','19:30:00'),(9,8,'2025-10-23','15:30:00','19:30:00'),
+(9,4,'2025-10-27','09:30:00','13:30:00'),(9,4,'2025-10-29','09:30:00','13:30:00'),(9,4,'2025-10-31','09:30:00','13:30:00'),
+(9,8,'2025-10-28','15:30:00','19:30:00'),(9,8,'2025-10-30','15:30:00','19:30:00'),
+
+-- Dra. Rosa (doctor_id=10) - Oftalmología
+(10,1,'2025-10-13','08:00:00','12:00:00'),(10,1,'2025-10-14','08:00:00','12:00:00'),(10,1,'2025-10-15','08:00:00','12:00:00'),
+(10,2,'2025-10-16','14:00:00','18:00:00'),(10,2,'2025-10-17','14:00:00','18:00:00'),
+(10,1,'2025-10-20','08:00:00','12:00:00'),(10,1,'2025-10-21','08:00:00','12:00:00'),(10,1,'2025-10-22','08:00:00','12:00:00'),
+(10,2,'2025-10-23','14:00:00','18:00:00'),(10,2,'2025-10-24','14:00:00','18:00:00'),
+(10,1,'2025-10-27','08:00:00','12:00:00'),(10,1,'2025-10-28','08:00:00','12:00:00'),(10,1,'2025-10-29','08:00:00','12:00:00'),
+(10,2,'2025-10-30','14:00:00','18:00:00'),(10,2,'2025-10-31','14:00:00','18:00:00'),
+
+-- Dr. Fernando (doctor_id=11) - Psiquiatría
+(11,3,'2025-10-13','10:00:00','14:00:00'),(11,3,'2025-10-15','10:00:00','14:00:00'),(11,3,'2025-10-17','10:00:00','14:00:00'),
+(11,4,'2025-10-14','16:00:00','20:00:00'),(11,4,'2025-10-16','16:00:00','20:00:00'),
+(11,3,'2025-10-20','10:00:00','14:00:00'),(11,3,'2025-10-22','10:00:00','14:00:00'),(11,3,'2025-10-24','10:00:00','14:00:00'),
+(11,4,'2025-10-21','16:00:00','20:00:00'),(11,4,'2025-10-23','16:00:00','20:00:00'),
+(11,3,'2025-10-27','10:00:00','14:00:00'),(11,3,'2025-10-29','10:00:00','14:00:00'),(11,3,'2025-10-31','10:00:00','14:00:00'),
+(11,4,'2025-10-28','16:00:00','20:00:00'),(11,4,'2025-10-30','16:00:00','20:00:00'),
+
+-- Dr. Antonio (doctor_id=12) - Urología
+(12,5,'2025-10-13','08:30:00','12:30:00'),(12,5,'2025-10-14','08:30:00','12:30:00'),(12,5,'2025-10-15','08:30:00','12:30:00'),
+(12,6,'2025-10-16','14:30:00','18:30:00'),(12,6,'2025-10-17','14:30:00','18:30:00'),
+(12,5,'2025-10-20','08:30:00','12:30:00'),(12,5,'2025-10-21','08:30:00','12:30:00'),(12,5,'2025-10-22','08:30:00','12:30:00'),
+(12,6,'2025-10-23','14:30:00','18:30:00'),(12,6,'2025-10-24','14:30:00','18:30:00'),
+(12,5,'2025-10-27','08:30:00','12:30:00'),(12,5,'2025-10-28','08:30:00','12:30:00'),(12,5,'2025-10-29','08:30:00','12:30:00'),
+(12,6,'2025-10-30','14:30:00','18:30:00'),(12,6,'2025-10-31','14:30:00','18:30:00'),
+
+-- Dr. Jorge (doctor_id=13) - Medicina General
+(13,7,'2025-10-13','09:00:00','13:00:00'),(13,7,'2025-10-14','09:00:00','13:00:00'),(13,7,'2025-10-15','09:00:00','13:00:00'),
+(13,8,'2025-10-16','15:00:00','19:00:00'),(13,8,'2025-10-17','15:00:00','19:00:00'),
+(13,7,'2025-10-20','09:00:00','13:00:00'),(13,7,'2025-10-21','09:00:00','13:00:00'),(13,7,'2025-10-22','09:00:00','13:00:00'),
+(13,8,'2025-10-23','15:00:00','19:00:00'),(13,8,'2025-10-24','15:00:00','19:00:00'),
+(13,7,'2025-10-27','09:00:00','13:00:00'),(13,7,'2025-10-28','09:00:00','13:00:00'),(13,7,'2025-10-29','09:00:00','13:00:00'),
+(13,8,'2025-10-30','15:00:00','19:00:00'),(13,8,'2025-10-31','15:00:00','19:00:00'),
+
+-- Dra. Isabel (doctor_id=14) - Cardiología
+(14,1,'2025-10-13','10:30:00','14:30:00'),(14,1,'2025-10-15','10:30:00','14:30:00'),(14,1,'2025-10-17','10:30:00','14:30:00'),
+(14,2,'2025-10-14','16:30:00','20:30:00'),(14,2,'2025-10-16','16:30:00','20:30:00'),
+(14,1,'2025-10-20','10:30:00','14:30:00'),(14,1,'2025-10-22','10:30:00','14:30:00'),(14,1,'2025-10-24','10:30:00','14:30:00'),
+(14,2,'2025-10-21','16:30:00','20:30:00'),(14,2,'2025-10-23','16:30:00','20:30:00'),
+(14,1,'2025-10-27','10:30:00','14:30:00'),(14,1,'2025-10-29','10:30:00','14:30:00'),(14,1,'2025-10-31','10:30:00','14:30:00'),
+(14,2,'2025-10-28','16:30:00','20:30:00'),(14,2,'2025-10-30','16:30:00','20:30:00'),
+
+-- Dr. Manuel (doctor_id=15) - Dermatología
+(15,3,'2025-10-13','08:00:00','12:00:00'),(15,3,'2025-10-14','08:00:00','12:00:00'),(15,3,'2025-10-15','08:00:00','12:00:00'),
+(15,4,'2025-10-16','14:00:00','18:00:00'),(15,4,'2025-10-17','14:00:00','18:00:00'),
+(15,3,'2025-10-20','08:00:00','12:00:00'),(15,3,'2025-10-21','08:00:00','12:00:00'),(15,3,'2025-10-22','08:00:00','12:00:00'),
+(15,4,'2025-10-23','14:00:00','18:00:00'),(15,4,'2025-10-24','14:00:00','18:00:00'),
+(15,3,'2025-10-27','08:00:00','12:00:00'),(15,3,'2025-10-28','08:00:00','12:00:00'),(15,3,'2025-10-29','08:00:00','12:00:00'),
+(15,4,'2025-10-30','14:00:00','18:00:00'),(15,4,'2025-10-31','14:00:00','18:00:00')
 ) v(doctor_id,sede_id,fecha,hora_inicio,hora_fin)
 WHERE NOT EXISTS (SELECT 1 FROM horarios_medicos hm WHERE hm.doctor_id=v.doctor_id AND hm.sede_id=v.sede_id AND hm.fecha=v.fecha AND hm.hora_inicio=v.hora_inicio AND hm.hora_fin=v.hora_fin);
 
@@ -512,3 +650,246 @@ SELECT c.doctor_id, c.id, c.fecha, c.hora_inicio, c.hora_fin, N'activo'
 FROM citas c
 WHERE c.fecha BETWEEN @start_date AND @end_date
 AND NOT EXISTS (SELECT 1 FROM calendario cal WHERE cal.cita_id = c.id);
+
+-- ===== DATOS DE PAGOS DE EJEMPLO =====
+GO
+
+-- Insertar algunos pagos de ejemplo para citas existentes
+INSERT INTO pagos (cita_id, cajero_id, monto, metodo_pago, estado, fecha_pago, observaciones)
+SELECT v.* FROM (VALUES
+-- Pagos para las primeras 10 citas como ejemplo
+(1, 1, 150.00, 'efectivo', 'completado', '2025-10-13 10:30:00', 'Pago en efectivo - consulta general'),
+(2, 1, 200.00, 'tarjeta_debito', 'completado', '2025-10-13 11:00:00', 'Pago con tarjeta de débito'),
+(3, 1, 180.00, 'efectivo', 'completado', '2025-10-13 11:30:00', 'Pago en efectivo - control'),
+(4, 1, 220.00, 'tarjeta_credito', 'completado', '2025-10-13 12:00:00', 'Pago con tarjeta de crédito'),
+(5, 1, 160.00, 'efectivo', 'completado', '2025-10-13 12:30:00', 'Pago en efectivo - seguimiento'),
+(6, 1, 190.00, 'transferencia', 'completado', '2025-10-13 13:00:00', 'Transferencia bancaria'),
+(7, 1, 170.00, 'efectivo', 'completado', '2025-10-13 13:30:00', 'Pago en efectivo - evaluación'),
+(8, 1, 210.00, 'cheque', 'completado', '2025-10-13 14:00:00', 'Pago con cheque'),
+(9, 1, 155.00, 'efectivo', 'completado', '2025-10-13 14:30:00', 'Pago en efectivo - consulta'),
+(10, 1, 185.00, 'tarjeta_debito', 'completado', '2025-10-13 15:00:00', 'Pago con tarjeta de débito')
+) v(cita_id, cajero_id, monto, metodo_pago, estado, fecha_pago, observaciones)
+WHERE NOT EXISTS (SELECT 1 FROM pagos p WHERE p.cita_id = v.cita_id);
+
+-- Actualizar el estado de pago de las citas que tienen pagos registrados
+UPDATE citas 
+SET pago = 'pagado' 
+WHERE id IN (SELECT cita_id FROM pagos WHERE estado = 'completado');
+GO
+
+-- ===== TRIGGERS =====
+
+-- Trigger para actualizar automáticamente el campo actualizado_en en la tabla pagos
+IF NOT EXISTS (SELECT 1 FROM sys.triggers WHERE name = 'tr_pagos_actualizado_en')
+BEGIN
+EXEC('
+CREATE TRIGGER tr_pagos_actualizado_en
+ON pagos
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE pagos 
+    SET actualizado_en = GETDATE()
+    FROM pagos p
+    INNER JOIN inserted i ON p.id = i.id;
+END
+');
+END;
+
+-- Trigger para actualizar automáticamente el estado de pago de la cita cuando se registra un pago
+IF NOT EXISTS (SELECT 1 FROM sys.triggers WHERE name = 'tr_pagos_actualizar_cita')
+BEGIN
+EXEC('
+CREATE TRIGGER tr_pagos_actualizar_cita
+ON pagos
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE citas 
+    SET pago = ''pagado''
+    FROM citas c
+    INNER JOIN inserted i ON c.id = i.cita_id
+    WHERE i.estado = ''completado'';
+END
+');
+END;
+GO
+
+-- ===== VISTAS ÚTILES PARA EL MÓDULO DE PAGOS =====
+
+-- Vista para reportes de pagos con información completa
+IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'v_pagos_completos')
+BEGIN
+EXEC('
+CREATE VIEW v_pagos_completos AS
+SELECT 
+    p.id AS pago_id,
+    p.monto,
+    p.metodo_pago,
+    p.estado AS estado_pago,
+    p.fecha_pago,
+    p.observaciones,
+    p.comprobante,
+    c.id AS cita_id,
+    c.fecha AS fecha_cita,
+    c.hora_inicio,
+    c.hora_fin,
+    c.razon,
+    c.estado AS estado_cita,
+    c.pago AS estado_pago_cita,
+    -- Información del paciente
+    u_pac.nombre AS paciente_nombre,
+    u_pac.apellido AS paciente_apellido,
+    u_pac.dni AS paciente_dni,
+    u_pac.email AS paciente_email,
+    u_pac.telefono AS paciente_telefono,
+    -- Información del doctor
+    u_doc.nombre AS doctor_nombre,
+    u_doc.apellido AS doctor_apellido,
+    esp.nombre AS especialidad_nombre,
+    -- Información de la sede
+    s.nombre_sede,
+    s.direccion AS sede_direccion,
+    s.telefono AS sede_telefono,
+    -- Información del cajero
+    u_caj.nombre AS cajero_nombre,
+    u_caj.apellido AS cajero_apellido
+FROM pagos p
+INNER JOIN citas c ON p.cita_id = c.id
+INNER JOIN pacientes pac ON c.paciente_id = pac.id
+INNER JOIN usuarios u_pac ON pac.usuario_id = u_pac.id
+INNER JOIN doctores doc ON c.doctor_id = doc.id
+INNER JOIN usuarios u_doc ON doc.usuario_id = u_doc.id
+LEFT JOIN especialidades esp ON doc.especialidad_id = esp.id
+LEFT JOIN sedes s ON c.sede_id = s.id
+INNER JOIN cajeros caj ON p.cajero_id = caj.id
+INNER JOIN usuarios u_caj ON caj.usuario_id = u_caj.id
+');
+END;
+GO
+
+-- Vista para estadísticas de pagos por cajero
+IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'v_estadisticas_pagos_cajero')
+BEGIN
+EXEC('
+CREATE VIEW v_estadisticas_pagos_cajero AS
+SELECT 
+    caj.id AS cajero_id,
+    u_caj.nombre + '' '' + u_caj.apellido AS cajero_nombre,
+    COUNT(p.id) AS total_pagos,
+    SUM(p.monto) AS monto_total,
+    AVG(p.monto) AS monto_promedio,
+    MIN(p.fecha_pago) AS primer_pago,
+    MAX(p.fecha_pago) AS ultimo_pago,
+    COUNT(CASE WHEN p.metodo_pago = ''efectivo'' THEN 1 END) AS pagos_efectivo,
+    COUNT(CASE WHEN p.metodo_pago = ''tarjeta_debito'' THEN 1 END) AS pagos_tarjeta_debito,
+    COUNT(CASE WHEN p.metodo_pago = ''tarjeta_credito'' THEN 1 END) AS pagos_tarjeta_credito,
+    COUNT(CASE WHEN p.metodo_pago = ''transferencia'' THEN 1 END) AS pagos_transferencia,
+    COUNT(CASE WHEN p.metodo_pago = ''cheque'' THEN 1 END) AS pagos_cheque
+FROM cajeros caj
+INNER JOIN usuarios u_caj ON caj.usuario_id = u_caj.id
+LEFT JOIN pagos p ON caj.id = p.cajero_id
+WHERE p.estado = ''completado''
+GROUP BY caj.id, u_caj.nombre, u_caj.apellido
+');
+END;
+GO
+
+-- Vista para citas pendientes de pago
+IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'v_citas_pendientes_pago')
+BEGIN
+EXEC('
+CREATE VIEW v_citas_pendientes_pago AS
+SELECT 
+    c.id AS cita_id,
+    c.fecha,
+    c.hora_inicio,
+    c.hora_fin,
+    c.razon,
+    c.estado,
+    c.pago,
+    -- Información del paciente
+    u_pac.nombre AS paciente_nombre,
+    u_pac.apellido AS paciente_apellido,
+    u_pac.dni AS paciente_dni,
+    u_pac.email AS paciente_email,
+    u_pac.telefono AS paciente_telefono,
+    -- Información del doctor
+    u_doc.nombre AS doctor_nombre,
+    u_doc.apellido AS doctor_apellido,
+    esp.nombre AS especialidad_nombre,
+    -- Información de la sede
+    s.nombre_sede,
+    s.direccion AS sede_direccion
+FROM citas c
+INNER JOIN pacientes pac ON c.paciente_id = pac.id
+INNER JOIN usuarios u_pac ON pac.usuario_id = u_pac.id
+INNER JOIN doctores doc ON c.doctor_id = doc.id
+INNER JOIN usuarios u_doc ON doc.usuario_id = u_doc.id
+LEFT JOIN especialidades esp ON doc.especialidad_id = esp.id
+LEFT JOIN sedes s ON c.sede_id = s.id
+WHERE c.estado = ''atendido'' 
+AND c.pago = ''pendiente''
+AND NOT EXISTS (SELECT 1 FROM pagos p WHERE p.cita_id = c.id)
+');
+END;
+GO
+
+-- ============================================
+-- INSERTAR USUARIOS DEMO CON @demo.local
+-- ============================================
+
+-- Insertar usuarios demo
+INSERT INTO usuarios (nombre, apellido, email, contrasenia, dni, telefono, direccion)
+SELECT v.* FROM (VALUES
+('Super','Demo','super@demo.local','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','99999999','999-999-001','Av. Demo 100, Lima'),
+('Doctor','Demo','doctor@demo.local','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','99999998','999-999-002','Av. Demo 200, Lima'),
+('Paciente','Demo','paciente@demo.local','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','99999997','999-999-003','Av. Demo 300, Lima'),
+('Cajero','Demo','cajero@demo.local','$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi','99999996','999-999-004','Av. Demo 400, Lima')
+) v(nombre,apellido,email,contrasenia,dni,telefono,direccion)
+WHERE NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.email = v.email);
+
+-- Asignar roles a usuarios demo (asumiendo que serán los últimos IDs insertados)
+DECLARE @super_id INT, @doctor_id INT, @paciente_id INT, @cajero_id INT;
+
+SELECT @super_id = id FROM usuarios WHERE email = 'super@demo.local';
+SELECT @doctor_id = id FROM usuarios WHERE email = 'doctor@demo.local';
+SELECT @paciente_id = id FROM usuarios WHERE email = 'paciente@demo.local';
+SELECT @cajero_id = id FROM usuarios WHERE email = 'cajero@demo.local';
+
+-- Insertar relaciones en tiene_roles
+INSERT INTO tiene_roles (usuario_id, rol_id)
+SELECT v.usuario_id, v.rol_id FROM (VALUES
+(@super_id,1), -- Superadmin
+(@doctor_id,2), -- Doctor
+(@paciente_id,3), -- Paciente
+(@cajero_id,4) -- Cajero
+) v(usuario_id,rol_id)
+WHERE v.usuario_id IS NOT NULL 
+AND NOT EXISTS (SELECT 1 FROM tiene_roles tr WHERE tr.usuario_id=v.usuario_id AND tr.rol_id=v.rol_id);
+
+-- Insertar en tabla superadmins
+INSERT INTO superadmins (usuario_id, nivel_acceso, departamento, observaciones)
+SELECT @super_id, 'total', 'Administración', 'Usuario demo para pruebas de superadmin'
+WHERE @super_id IS NOT NULL 
+AND NOT EXISTS (SELECT 1 FROM superadmins sa WHERE sa.usuario_id = @super_id);
+
+-- Insertar en tabla doctores
+INSERT INTO doctores (usuario_id, especialidad_id, cmp, biografia)
+SELECT @doctor_id, 1, 'CMP-DEMO', 'Doctor demo para pruebas del sistema'
+WHERE @doctor_id IS NOT NULL 
+AND NOT EXISTS (SELECT 1 FROM doctores d WHERE d.usuario_id = @doctor_id);
+
+-- Insertar en tabla pacientes  
+INSERT INTO pacientes (usuario_id, numero_historia_clinica, tipo_sangre, alergias, condicion_cronica, historial_cirugias, historico_familiar, observaciones, contacto_emergencia_nombre, contacto_emergencia_telefono, contacto_emergencia_relacion)
+SELECT @paciente_id, 'HC-DEMO', 'O+', 'Ninguna', 'Ninguna', 'Ninguna', 'Ninguna', 'Paciente demo para pruebas', 'Contacto Demo', '999-999-000', 'Familiar'
+WHERE @paciente_id IS NOT NULL 
+AND NOT EXISTS (SELECT 1 FROM pacientes p WHERE p.usuario_id = @paciente_id);
+
+-- Insertar en tabla cajeros
+INSERT INTO cajeros (usuario_id, numero_caja, sucursal, observaciones)
+SELECT @cajero_id, 'CAJA-DEMO', 'Sucursal Demo', 'Cajero demo para pruebas del sistema'
+WHERE @cajero_id IS NOT NULL 
+AND NOT EXISTS (SELECT 1 FROM cajeros c WHERE c.usuario_id = @cajero_id);

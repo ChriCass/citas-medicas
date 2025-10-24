@@ -100,9 +100,10 @@ class Router {
         foreach($mws as $mw){
             if(is_string($mw)){
                 $map = [
-                    'auth'  => \App\Middleware\AuthMiddleware::class,
-                    'guest' => \App\Middleware\GuestMiddleware::class,
-                    'json'  => \App\Middleware\JsonMiddleware::class
+                    'auth'    => \App\Middleware\AuthMiddleware::class,
+                    'guest'   => \App\Middleware\GuestMiddleware::class,
+                    'json'    => \App\Middleware\JsonMiddleware::class,
+                    'cashier' => \App\Middleware\CashierMiddleware::class
                 ];
                 $mw = $map[$mw] ?? $mw;
             }

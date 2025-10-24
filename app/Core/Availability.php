@@ -33,17 +33,28 @@ class Availability
                 if ($tEnd > $end) break;
 
                 // No permitir reservar en pasado (solo si es hoy y la hora ya pasó)
-                if ($date->format('Y-m-d') === $now->format('Y-m-d') && $t <= $now) {
+                if ($date->format('Y-m-d') === $now->format('Y-m-d') && $t->format('H:i') <= $now->format('H:i')) {
                     continue;
                 }
 
                 $startTimeOnly = $t->format('H:i:s');
                 $endTimeOnly = $tEnd->format('H:i:s');
                 if (!Appointment::overlapsWindow($dateString, $startTimeOnly, $endTimeOnly, $doctorId, $locationId)) {
-                    $slots[] = $t->format('H:i');
+                    $slots[] = [
+                        'start' => $t->format('H:i'),
+                        'end' => $tEnd->format('H:i')
+                    ];
                 }
             }
         }
-        return array_values(array_unique($slots));
+        // Remover duplicados manualmente ya que array_unique no funciona con arrays
+        $uniqueSlots = [];
+        foreach ($slots as $slot) {
+            $key = $slot['start'] . '-' . $slot['end'];
+            if (!isset($uniqueSlots[$key])) {
+                $uniqueSlots[$key] = $slot;
+            }
+        }
+        return array_values($uniqueSlots);
     }
 }

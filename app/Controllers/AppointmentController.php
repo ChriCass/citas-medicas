@@ -34,8 +34,9 @@ class AppointmentController
         if (!$user) return $res->redirect('/login');
         Auth::abortUnless($res, ['superadmin']); // Solo superadmin crea
 
+        // Obtener todos los pacientes usando Eloquent
         $pacientes = User::patients(null, 300);
-        $doctores = Doctor::getAll(); // Cambiado a usar Doctor::getAll() que devuelve doctores con sus IDs correctos
+        $doctores = Doctor::getAll();
         $sedes = Sede::getAll();
         $especialidades = Especialidad::getAll();
         $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
@@ -48,6 +49,11 @@ class AppointmentController
         $user = $_SESSION['user'] ?? null; 
         if (!$user) return $res->redirect('/login');
         Auth::abortUnless($res, ['superadmin']);
+
+        // Verificar si es una cancelación
+        if (isset($_POST['cancel'])) {
+            return $res->redirect('/citas?cancel_creation=1');
+        }
 
         if (!Csrf::verify((string)($_POST['_csrf'] ?? ''))) {
             return $res->view('citas/create', [
@@ -96,13 +102,15 @@ class AppointmentController
         }
 
         // Validar doctor
-        $doctor = Doctor::find($doctorId);
+        $doctorModel = new Doctor();
+        $doctor = $doctorModel->find($doctorId);
         if (!$doctor) {
             return $res->view('citas/create', ['error'=>'Doctor no válido'] + self::bags());
         }
 
         // Validar sede si se proporciona
-        $sede = $sedeId > 0 ? Sede::find($sedeId) : null;
+        $sedeModel = new Sede();
+        $sede = $sedeId > 0 ? $sedeModel->find($sedeId) : null;
         if ($sedeId > 0 && !$sede) {
             return $res->view('citas/create', ['error'=>'Sede no válida'] + self::bags());
         }
@@ -122,8 +130,8 @@ class AppointmentController
             return $res->view('citas/create', ['error'=>'El horario ya no está disponible'] + self::bags());
         }
 
-        Appointment::create($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes);
-        return $res->redirect('/citas');
+        $citaId = Appointment::createAppointment($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes);
+        return $res->redirect('/citas?success=1');
     }
 
     /** El médico puede marcar su cita como 'atendido' */
@@ -168,7 +176,7 @@ class AppointmentController
 
         $id = (int)($req->params['id'] ?? 0);
         $st = (string)($_POST['status'] ?? '');
-        if (!in_array($st, ['pendiente','confirmado','cancelado'], true)) {
+        if (!in_array($st, ['pendiente','confirmado','atendido','cancelado'], true)) {
             return $res->abort(422,'Estado inválido');
         }
         Appointment::updateStatus($id, $st);
@@ -185,13 +193,14 @@ class AppointmentController
 
         if ($role === 'paciente') {
             if (!Appointment::cancelByPatient($id, (int)$user['id'])) {
-                return $res->abort(422,'Solo puedes cancelar hasta 24 horas antes.');
+                return $res->redirect('/citas?error=cancel_time');
             }
+            return $res->redirect('/citas?canceled=1');
         } else {
             // otros roles (si lo deseas) podrían cancelar sin restricción
             Appointment::updateStatus($id,'cancelado');
+            return $res->redirect('/citas?canceled=1');
         }
-        return $res->redirect('/citas');
     }
 
     private static function bags(): array {
@@ -203,5 +212,103 @@ class AppointmentController
             'today'=>date('Y-m-d'),
             'title'=> 'Reservar cita'
         ];
+    }
+    
+    /** Mostrar formulario de modificación de cita */
+    public function edit(Request $req, Response $res)
+    {
+        $user = $_SESSION['user'] ?? null; 
+        if (!$user) return $res->redirect('/login');
+        
+        $id = (int)($req->params['id'] ?? 0);
+        $role = $user['rol'] ?? '';
+        
+        // Solo pacientes pueden modificar sus propias citas
+        if ($role !== 'paciente') {
+            return $res->redirect('/citas')->with('error', 'Solo los pacientes pueden modificar citas');
+        }
+        
+        // Verificar que puede modificar la cita
+        if (!Appointment::canModify($id, (int)$user['id'])) {
+            return $res->redirect('/citas')->with('error', 'No se puede modificar esta cita. Debe ser futura y con al menos 24 horas de anticipación.');
+        }
+        
+        // Obtener datos de la cita
+        $appointment = new Appointment();
+        $cita = $appointment->find($id);
+        
+        if (!$cita) {
+            return $res->redirect('/citas')->with('error', 'Cita no encontrada');
+        }
+        
+        // Obtener datos para el formulario
+        $doctores = Doctor::getAll();
+        $sedes = Sede::getAll();
+        $especialidades = Especialidad::getAll();
+        
+        return $res->view('citas/edit', [
+            'title' => 'Modificar Cita',
+            'cita' => $cita,
+            'doctores' => $doctores,
+            'sedes' => $sedes,
+            'especialidades' => $especialidades,
+            'user' => $user
+        ]);
+    }
+    
+    /** Procesar modificación de cita */
+    public function update(Request $req, Response $res)
+    {
+        $user = $_SESSION['user'] ?? null; 
+        if (!$user) return $res->redirect('/login');
+        
+        $id = (int)($req->params['id'] ?? 0);
+        $role = $user['rol'] ?? '';
+        
+        // Solo pacientes pueden modificar sus propias citas
+        if ($role !== 'paciente') {
+            return $res->redirect('/citas')->with('error', 'Solo los pacientes pueden modificar citas');
+        }
+        
+        // Obtener datos del formulario
+        $doctorId = !empty($req->body['doctor_id']) ? (int)$req->body['doctor_id'] : null;
+        $sedeId = !empty($req->body['sede_id']) ? (int)$req->body['sede_id'] : null;
+        $fecha = !empty($req->body['fecha']) ? $req->body['fecha'] : null;
+        $horaInicio = !empty($req->body['hora_inicio']) ? $req->body['hora_inicio'] : null;
+        $horaFin = !empty($req->body['hora_fin']) ? $req->body['hora_fin'] : null;
+        $razon = !empty($req->body['razon']) ? trim($req->body['razon']) : null;
+        
+        // Validaciones básicas
+        if ($fecha && $horaInicio && $horaFin) {
+            $fechaHora = $fecha . ' ' . $horaInicio;
+            $fechaHoraObj = new \DateTimeImmutable($fechaHora);
+            $now = new \DateTimeImmutable('now');
+            
+            if ($fechaHoraObj <= $now) {
+                return $res->redirect("/citas/{$id}/edit")->with('error', 'La fecha y hora deben ser futuras');
+            }
+            
+            if ($horaInicio >= $horaFin) {
+                return $res->redirect("/citas/{$id}/edit")->with('error', 'La hora de inicio debe ser anterior a la hora de fin');
+            }
+        }
+        
+        // Intentar modificar la cita
+        $success = Appointment::modifyAppointment(
+            $id,
+            (int)$user['id'],
+            $doctorId,
+            $sedeId,
+            $fecha,
+            $horaInicio,
+            $horaFin,
+            $razon
+        );
+        
+        if ($success) {
+            return $res->redirect('/citas')->with('success', 'Cita modificada exitosamente');
+        } else {
+            return $res->redirect("/citas/{$id}/edit")->with('error', 'No se pudo modificar la cita. Verifique la disponibilidad del horario seleccionado.');
+        }
     }
 }

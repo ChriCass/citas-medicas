@@ -93,7 +93,7 @@ class DoctorScheduleController
             ]);
         }
 
-        DoctorSchedule::create($doctorId, $sedeId, $fecha, $start, $end, 1);
+        DoctorSchedule::createSchedule($doctorId, $sedeId, $fecha, $start, $end, 'Horario creado por superadmin');
         return $res->redirect('/doctor-schedules');
     }
 
@@ -107,7 +107,7 @@ class DoctorScheduleController
         }
 
         $id = (int)($req->params['id'] ?? 0);
-        if ($id>0) DoctorSchedule::delete($id);
+        if ($id>0) DoctorSchedule::deleteSchedule($id);
         return $res->redirect('/doctor-schedules');
     }
 }

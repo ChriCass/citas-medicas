@@ -59,7 +59,8 @@
             <?php endif; ?>
 
             <?php if ($role === 'paciente' && $a['estado']!=='cancelado'): ?>
-              <form method="POST" action="/citas/<?= (int)$a['id'] ?>/cancel" style="display:inline" onsubmit="return confirm('¿Cancelar esta cita? (hasta 24h antes)');">
+              <a href="/citas/<?= (int)$a['id'] ?>/edit" class="btn small primary" style="margin-right: 5px;">Modificar</a>
+              <form method="POST" action="/citas/<?= (int)$a['id'] ?>/cancel" style="display:inline" onsubmit="return confirmCancelAppointment(event, this);">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
                 <button class="btn small danger" type="submit">Cancelar</button>
               </form>
@@ -70,3 +71,27 @@
     </tbody>
   </table>
 </div>
+
+<script>
+// Función para confirmar cancelación de cita con SweetAlert2
+function confirmCancelAppointment(event, form) {
+  event.preventDefault();
+  
+  Swal.fire({
+    title: '¿Cancelar cita?',
+    text: '¿Estás seguro de que deseas cancelar esta cita? Solo puedes cancelar hasta 24 horas antes.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Sí, cancelar',
+    cancelButtonText: 'No, mantener'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      form.submit();
+    }
+  });
+  
+  return false;
+}
+</script>

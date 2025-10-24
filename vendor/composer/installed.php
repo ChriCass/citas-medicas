@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'acme/php-mvc-scaffolding-roles',
-        'pretty_version' => 'dev-main',
-        'version' => 'dev-main',
-        'reference' => '96d010ba2e40ab469f77492d0222de909af4fdde',
+        'pretty_version' => '1.0.0+no-version-set',
+        'version' => '1.0.0.0',
+        'reference' => null,
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         'acme/php-mvc-scaffolding-roles' => array(
-            'pretty_version' => 'dev-main',
-            'version' => 'dev-main',
-            'reference' => '96d010ba2e40ab469f77492d0222de909af4fdde',
+            'pretty_version' => '1.0.0+no-version-set',
+            'version' => '1.0.0.0',
+            'reference' => null,
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

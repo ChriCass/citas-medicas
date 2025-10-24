@@ -1,53 +1,52 @@
 <?php
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\HasMany;
-
-class Especialidad extends BaseModel
+class Especialidad extends SimpleModel
 {
-    protected $table = 'especialidades';
-    
-    protected $fillable = ['nombre', 'descripcion'];
-    
-    // Relaciones
-    public function doctores(): HasMany
+    public function __construct()
     {
-        return $this->hasMany(Doctor::class, 'especialidad_id');
+        parent::__construct();
+        $this->table = 'especialidades';
+        $this->fillable = [
+            'nombre', 'descripcion'
+        ];
     }
-    
+
+    // Propiedades públicas para evitar warnings de PHP 8.4
+    public $id;
+    public $nombre;
+    public $descripcion;
+    public $creado_en;
+    public $actualizado_en;
+
     // Métodos estáticos para compatibilidad
-    public static function getAll(): \Illuminate\Database\Eloquent\Collection
+    public static function getAll(): array
     {
-        return static::orderBy('nombre')->get();
+        $instance = new static();
+        $sql = "SELECT * FROM especialidades ORDER BY nombre";
+        return $instance->db->fetchAll($sql);
     }
-    
-    public static function create(string $nombre, ?string $descripcion = null): int
+
+    public static function createEspecialidad(string $nombre, ?string $descripcion = null): int
     {
         $especialidad = new static();
-        $especialidad->nombre = $nombre;
-        $especialidad->descripcion = $descripcion;
-        $especialidad->save();
+        $data = [
+            'nombre' => $nombre,
+            'descripcion' => $descripcion
+        ];
         
-        return $especialidad->id;
+        return $especialidad->create($data);
     }
-    
-    public static function updateRecord(int $id, array $data): bool
+
+    public static function updateEspecialidad(int $id, array $data): bool
     {
-        $especialidad = parent::find($id);
-        if (!$especialidad) {
+        $especialidad = new static();
+        $especialidadData = $especialidad->find($id);
+        
+        if (!$especialidadData) {
             return false;
         }
         
-        return $especialidad->update($data);
-    }
-    
-    public static function deleteRecord(int $id): bool
-    {
-        $especialidad = parent::find($id);
-        if (!$especialidad) {
-            return false;
-        }
-        
-        return $especialidad->delete();
+        return $especialidad->update($id, $data);
     }
 }

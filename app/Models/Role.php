@@ -1,18 +1,18 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Model;
 
-class Role extends BaseModel
+class Role extends Model
 {
     protected $table = 'roles';
-    
     protected $fillable = ['nombre', 'descripcion'];
     
-    // Relaciones
-    public function users(): BelongsToMany
+    public $timestamps = false;
+    
+    public function users()
     {
-        return $this->belongsToMany(User::class, 'tiene_roles', 'rol_id', 'usuario_id')
-                    ->withPivot('creado_en');
+        return $this->belongsToMany(User::class, 'tiene_roles', 'rol_id', 'usuario_id');
     }
 }

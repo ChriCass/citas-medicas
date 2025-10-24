@@ -70,6 +70,20 @@ $upcoming = $upcoming ?? [];
         Reservar
       </a>
     <?php endif; ?>
+
+    <?php if ($roleNorm === 'cashier' || $roleNorm === 'cajero'): ?>
+      <a href="/pagos" style="
+        padding: 0.5rem 1rem;
+        background-color: #28a745;
+        color: #fff;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: background 0.3s;
+      " onmouseover="this.style.backgroundColor='#218838';" onmouseout="this.style.backgroundColor='#28a745';">
+        Gestión de Pagos
+      </a>
+    <?php endif; ?>
   </div>
 
   <!-- Próximas citas -->
