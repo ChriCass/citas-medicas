@@ -300,10 +300,25 @@ class AppointmentController
             $recetas = [];
         }
 
+        // Cargar diagnósticos asociados a la consulta (detalle_consulta)
+        $consultaDiagnosticos = [];
+        try {
+            if ($consulta && !empty($consulta->id)) {
+                $consultaDiagnosticos = DB::table('detalle_consulta')
+                    ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                    ->where('detalle_consulta.id_consulta', $consulta->id)
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->get()->map(function($r){ return (array)$r; })->toArray();
+            }
+        } catch (\Throwable $e) {
+            $consultaDiagnosticos = [];
+        }
+
         return $res->view('citas/attend', [
             'title' => 'Atender cita',
             'appointment' => $appointment,
             'consulta' => $consulta,
+            'consulta_diagnosticos' => $consultaDiagnosticos,
             'diagnosticos' => $diagnosticos,
             'medicamentos' => $medicamentos,
             'recetas' => $recetas
@@ -323,8 +338,21 @@ class AppointmentController
             return $res->abort(403,'No autorizado');
         }
 
-    $diagnosticoText = trim((string)($_POST['diagnostico'] ?? ''));
-    $diagnosticoId = (int)($_POST['diagnostico_id'] ?? 0);
+    // soportar múltiples diagnósticos enviados desde la vista: diagnosticos[][id]
+    $diagnosticosRaw = $_POST['diagnosticos'] ?? [];
+    $diagnosticoId = 0; // conserva compatibilidad: primer id si existe
+    $diagnosticosInput = [];
+    if (is_array($diagnosticosRaw)) {
+        foreach ($diagnosticosRaw as $r) {
+            if (!is_array($r) && !is_object($r)) continue;
+            $idVal = isset($r['id']) ? (int)$r['id'] : 0;
+            if ($idVal > 0) $diagnosticosInput[$idVal] = true;
+        }
+    }
+    $diagnosticosInput = array_keys($diagnosticosInput);
+    if (count($diagnosticosInput) > 0) {
+        $diagnosticoId = (int)$diagnosticosInput[0];
+    }
     $observaciones = trim((string)($_POST['observaciones'] ?? ''));
     // recetas expected as array: $_POST['recetas'][0]['id_medicamento'] etc.
     // Accept either the legacy array input or a JSON payload built client-side
@@ -345,31 +373,53 @@ class AppointmentController
     $marcar = trim((string)($_POST['marcar_estado'] ?? ''));
 
         // Validaciones mínimas
-    // Si el médico no marca 'ausente' se requiere seleccionar un diagnóstico existente
-    if ($marcar !== 'ausente') {
-            if ($diagnosticoId <= 0 || $estadoPost === '') {
+    // Si el médico no marca 'ausente' se requiere seleccionar al menos un diagnóstico existente
+        if ($marcar !== 'ausente') {
+            if (count($diagnosticosInput) <= 0 || $estadoPost === '') {
+                $consultaObj = Consulta::findByCitaId($id);
+                $consultaDiagnosticos = [];
+                if ($consultaObj) {
+                    $consultaDiagnosticos = DB::table('detalle_consulta')
+                        ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                        ->where('detalle_consulta.id_consulta', $consultaObj->id)
+                        ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                        ->get()->map(function($r){ return (array)$r; })->toArray();
+                }
                 return $res->view('citas/attend', [
-                    'error' => 'Debe seleccionar un diagnóstico existente y completar el estado postconsulta. No está permitido crear diagnósticos nuevos desde este formulario.',
+                    'error' => 'Debe seleccionar al menos un diagnóstico existente y completar el estado postconsulta. No está permitido crear diagnósticos nuevos desde este formulario.',
                     'appointment' => Appointment::with(['paciente.user'])->find($id),
-                    'consulta' => Consulta::findByCitaId($id),
+                    'consulta' => $consultaObj,
+                    'consulta_diagnosticos' => $consultaDiagnosticos,
                     'diagnosticos' => \App\Models\Diagnostico::search(''),
                     'medicamentos' => \App\Models\Medicamento::all()->toArray(),
                     'recetas' => [] ,
                     'title' => 'Atender cita'
                 ]);
             }
-            // Verificar que el diagnóstico exista en la base de datos
-            $exists = DB::table('diagnosticos')->where('id', $diagnosticoId)->exists();
-            if (!$exists) {
-                return $res->view('citas/attend', [
-                    'error' => 'Diagnóstico seleccionado no existe. Por favor selecciona uno existente.',
-                    'appointment' => Appointment::with(['paciente.user'])->find($id),
-                    'consulta' => Consulta::findByCitaId($id),
-                    'diagnosticos' => \App\Models\Diagnostico::search(''),
-                    'medicamentos' => \App\Models\Medicamento::all()->toArray(),
-                    'recetas' => [] ,
-                    'title' => 'Atender cita'
-                ]);
+            // Verificar que todos los diagnósticos existan en la base de datos
+            if (count($diagnosticosInput) > 0) {
+                $foundCount = DB::table('diagnosticos')->whereIn('id', $diagnosticosInput)->count();
+                if ($foundCount !== count($diagnosticosInput)) {
+                    $consultaObj = Consulta::findByCitaId($id);
+                    $consultaDiagnosticos = [];
+                    if ($consultaObj) {
+                        $consultaDiagnosticos = DB::table('detalle_consulta')
+                            ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                            ->where('detalle_consulta.id_consulta', $consultaObj->id)
+                            ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                            ->get()->map(function($r){ return (array)$r; })->toArray();
+                    }
+                    return $res->view('citas/attend', [
+                        'error' => 'Uno o más diagnósticos seleccionados no existen. Por favor selecciona diagnósticos válidos.',
+                        'appointment' => Appointment::with(['paciente.user'])->find($id),
+                        'consulta' => $consultaObj,
+                        'consulta_diagnosticos' => $consultaDiagnosticos,
+                        'diagnosticos' => \App\Models\Diagnostico::search(''),
+                        'medicamentos' => \App\Models\Medicamento::all()->toArray(),
+                        'recetas' => [] ,
+                        'title' => 'Atender cita'
+                    ]);
+                }
             }
         }
 
@@ -383,26 +433,29 @@ class AppointmentController
         try {
             DB::beginTransaction();
 
-            // Usar el diagnóstico seleccionado (no se permiten creaciones desde este formulario)
-            $diagId = $diagnosticoId > 0 ? $diagnosticoId : null;
+            // Usar los diagnósticos seleccionados (no se permiten creaciones desde este formulario)
+            $diagId = $diagnosticoId > 0 ? $diagnosticoId : null; // mantener compatibilidad en el campo diagnóstico de consulta
 
             // Insertar o actualizar registro en 'consultas' (campo 'receta' ya no existe)
             $consulta = Consulta::findByCitaId($id);
             if ($consulta) {
-                $consulta->diagnostico_id = $diagId;
                 $consulta->observaciones = $observaciones;
                 $consulta->estado_postconsulta = $estadoPost;
                 $consulta->save();
             } else {
                 $c = new Consulta();
                 $c->cita_id = $id;
-                $c->diagnostico_id = $diagId;
                 $c->observaciones = $observaciones;
                 $c->estado_postconsulta = $estadoPost;
                 $c->save();
             }
 
+            // Sincronizar la tabla detalle_consulta con los diagnósticos entrantes
+            $consultaId = ($consulta ?? $c)->id;
+            $this->syncDetalleConsulta($consultaId, $diagnosticosInput);
+
             // Persistir recetas por diff: UPDATE existing by id, INSERT new, DELETE those removed
+            // recetas handling permanece igual
             $consultaId = ($consulta ?? $c)->id;
             $incomingIds = [];
 
@@ -474,13 +527,23 @@ class AppointmentController
             return $res->redirect('/citas/today');
         } catch (\Exception $e) {
             DB::rollBack();
+            $consultaObj = Consulta::findByCitaId($id);
+            $consultaDiagnosticos = [];
+            if ($consultaObj) {
+                $consultaDiagnosticos = DB::table('detalle_consulta')
+                    ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                    ->where('detalle_consulta.id_consulta', $consultaObj->id)
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->get()->map(function($r){ return (array)$r; })->toArray();
+            }
             return $res->view('citas/attend', [
                 'error' => 'Error al guardar la consulta: ' . $e->getMessage(),
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
-                'consulta' => Consulta::findByCitaId($id),
+                'consulta' => $consultaObj,
+                'consulta_diagnosticos' => $consultaDiagnosticos,
                 'diagnosticos' => \App\Models\Diagnostico::search(''),
                 'medicamentos' => \App\Models\Medicamento::all()->toArray(),
-                'recetas' => \App\Models\Receta::where('consulta_id', Consulta::findByCitaId($id)?->id ?? 0)->with('medicamento')->get()->toArray(),
+                'recetas' => \App\Models\Receta::where('consulta_id', $consultaObj?->id ?? 0)->with('medicamento')->get()->toArray(),
                 'title' => 'Atender cita'
             ]);
         }
@@ -524,24 +587,27 @@ class AppointmentController
         $appointmentArr = (is_object($appointment) && method_exists($appointment, 'toArray')) ? $appointment->toArray() : $appointment;
         $consultaArr = (is_object($consulta) && method_exists($consulta, 'toArray')) ? $consulta->toArray() : $consulta;
 
-        // Si existe diagnostico_id en la consulta, intentar cargar su nombre para mostrarlo en la vista
+        // Cargar diagnosticos asociados a la consulta a través de detalle_consulta
+        $consultaDiagnosticos = [];
         try {
-            if (is_array($consultaArr) && !empty($consultaArr['diagnostico_id'])) {
-                $diagId = (int)$consultaArr['diagnostico_id'];
-                $diag = DB::table('diagnosticos')->where('id', $diagId)->first();
-                if ($diag) {
-                    // $diag puede ser stdClass desde PDO
-                    $consultaArr['diagnostico_nombre'] = $diag->nombre_enfermedad ?? ($diag->nombre ?? null);
-                }
+            if ($consulta && !empty($consulta->id)) {
+                $consultaDiagnosticos = DB::table('detalle_consulta')
+                    ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                    ->where('detalle_consulta.id_consulta', $consulta->id)
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->get()->map(function($r){ return (array)$r; })->toArray();
+                // añadir al array de consulta para compatibilidad con la vista
+                if (is_array($consultaArr)) $consultaArr['diagnosticos'] = $consultaDiagnosticos;
             }
         } catch (\Throwable $e) {
-            // no crítico: si falla, la vista seguirá mostrando el campo vacío
+            $consultaDiagnosticos = [];
         }
 
         return $res->view('citas/edit', [
             'title' => 'Editar cita',
             'appointment' => $appointmentArr,
             'consulta' => $consultaArr,
+            'consulta_diagnosticos' => $consultaDiagnosticos,
             'diagnosticos' => $diagnosticos,
             'medicamentos' => $medicamentos,
             'recetas' => $recetas
@@ -561,7 +627,21 @@ class AppointmentController
             return $res->abort(403,'No autorizado');
         }
 
-        $diagnosticoId = (int)($_POST['diagnostico_id'] ?? 0);
+        // soportar múltiples diagnósticos enviados desde la vista: diagnosticos[][id]
+        $diagnosticosRaw = $_POST['diagnosticos'] ?? [];
+        $diagnosticoId = 0;
+        $diagnosticosInput = [];
+        if (is_array($diagnosticosRaw)) {
+            foreach ($diagnosticosRaw as $r) {
+                if (!is_array($r) && !is_object($r)) continue;
+                $idVal = isset($r['id']) ? (int)$r['id'] : 0;
+                if ($idVal > 0) $diagnosticosInput[$idVal] = true;
+            }
+        }
+        $diagnosticosInput = array_keys($diagnosticosInput);
+        if (count($diagnosticosInput) > 0) {
+            $diagnosticoId = (int)$diagnosticosInput[0];
+        }
         $observaciones = trim((string)($_POST['observaciones'] ?? ''));
         $recetasInput = [];
         if (!empty($_POST['recetas_payload'])) {
@@ -580,9 +660,9 @@ class AppointmentController
 
         // Validaciones mínimas
         $allowedPost = ['No problemático','Pasivo','Problemático'];
-        if ($diagnosticoId <= 0) {
+        if (count($diagnosticosInput) <= 0) {
             return $res->view('citas/edit', [
-                'error' => 'Debe seleccionar un diagnóstico existente.',
+                'error' => 'Debe seleccionar al menos un diagnóstico existente.',
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
                 'consulta' => Consulta::findByCitaId($id),
                 'diagnosticos' => \App\Models\Diagnostico::search(''),
@@ -610,20 +690,20 @@ class AppointmentController
 
             $consulta = Consulta::findByCitaId($id);
             if ($consulta) {
-                $consulta->diagnostico_id = $diagId;
                 $consulta->observaciones = $observaciones;
                 $consulta->estado_postconsulta = $estadoPost;
                 $consulta->save();
             } else {
                 $c = new Consulta();
                 $c->cita_id = $id;
-                $c->diagnostico_id = $diagId;
                 $c->observaciones = $observaciones;
                 $c->estado_postconsulta = $estadoPost;
                 $c->save();
             }
 
             $consultaId = ($consulta ?? $c)->id;
+            // Sincronizar detalle_consulta con los ids entrantes
+            $this->syncDetalleConsulta($consultaId, $diagnosticosInput);
             $incomingIds = [];
 
             if (is_array($recetasInput)) {
@@ -673,13 +753,23 @@ class AppointmentController
             return $res->redirect('/citas/today');
         } catch (\Exception $e) {
             DB::rollBack();
+            $consultaObj = Consulta::findByCitaId($id);
+            $consultaDiagnosticos = [];
+            if ($consultaObj) {
+                $consultaDiagnosticos = DB::table('detalle_consulta')
+                    ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
+                    ->where('detalle_consulta.id_consulta', $consultaObj->id)
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->get()->map(function($r){ return (array)$r; })->toArray();
+            }
             return $res->view('citas/edit', [
                 'error' => 'Error al guardar los cambios: ' . $e->getMessage(),
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
-                'consulta' => Consulta::findByCitaId($id),
+                'consulta' => $consultaObj,
+                'consulta_diagnosticos' => $consultaDiagnosticos,
                 'diagnosticos' => \App\Models\Diagnostico::search(''),
                 'medicamentos' => \App\Models\Medicamento::all()->toArray(),
-                'recetas' => \App\Models\Receta::where('consulta_id', Consulta::findByCitaId($id)?->id ?? 0)->with('medicamento')->get()->toArray(),
+                'recetas' => \App\Models\Receta::where('consulta_id', $consultaObj?->id ?? 0)->with('medicamento')->get()->toArray(),
                 'title' => 'Editar cita'
             ]);
         }
@@ -694,5 +784,42 @@ class AppointmentController
             'today'=>date('Y-m-d'),
             'title'=> 'Reservar cita'
         ];
+    }
+
+    /**
+     * Sincroniza la tabla detalle_consulta para una consulta dada
+     * Recibe los ids de diagnóstico entrantes (array de ints) y mantiene
+     * INSERTs y DELETEs necesarios para que la tabla refleje exactamente
+     * esos ids para la consulta.
+     */
+    private function syncDetalleConsulta(int $consultaId, array $incomingIds): void
+    {
+        // normalizar
+        $incomingIds = array_values(array_filter(array_map('intval', array_unique($incomingIds)), function ($v) { return $v > 0; }));
+
+        // obtener existentes
+        $existing = DB::table('detalle_consulta')
+            ->where('id_consulta', $consultaId)
+            ->pluck('id_diagnostico')
+            ->toArray();
+
+        $toInsert = array_diff($incomingIds, $existing);
+        $toDelete = array_diff($existing, $incomingIds);
+
+        if (!empty($toInsert)) {
+            foreach ($toInsert as $did) {
+                DB::table('detalle_consulta')->insert([
+                    'id_consulta' => $consultaId,
+                    'id_diagnostico' => $did
+                ]);
+            }
+        }
+
+        if (!empty($toDelete)) {
+            DB::table('detalle_consulta')
+                ->where('id_consulta', $consultaId)
+                ->whereIn('id_diagnostico', $toDelete)
+                ->delete();
+        }
     }
 }

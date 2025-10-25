@@ -9,7 +9,7 @@ class Consulta extends BaseModel
     protected $table = 'consultas';
 
     protected $fillable = [
-        'cita_id', 'diagnostico_id', 'observaciones', 'receta', 'estado_postconsulta'
+        'cita_id', 'observaciones', 'receta', 'estado_postconsulta'
     ];
 
     public $timestamps = false;
@@ -19,9 +19,10 @@ class Consulta extends BaseModel
         return $this->belongsTo(Appointment::class, 'cita_id');
     }
 
-    public function diagnostico(): BelongsTo
+    // relación hasMany hacia detalle_consulta
+    public function detalles()
     {
-        return $this->belongsTo(DiagnosticoModel::class, 'diagnostico_id');
+        return $this->hasMany(DetalleConsulta::class, 'id_consulta');
     }
 
     public static function findByCitaId(int $citaId): ?self

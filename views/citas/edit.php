@@ -64,15 +64,13 @@
     <input type="hidden" name="recetas_payload" id="recetas_payload" value="">
     <div id="client_error" class="alert error mt-2" style="display:none"></div>
     <div class="row" style="position:relative;">
-      <label class="label">Diagnóstico</label>
-  <div class="input-with-toggle">
-  <input class="input" type="text" name="diagnostico" id="diagnostico_input" value="<?= htmlspecialchars($c['diagnostico_nombre'] ?? '') ?>" autocomplete="on" aria-haspopup="listbox" aria-expanded="false">
-    <button type="button" class="toggle-btn" id="diagnostico_toggle" aria-label="Mostrar lista de diagnósticos" title="Mostrar lista de diagnósticos">
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9l6 6l6 -6" /></svg>
-    </button>
-  <input type="hidden" name="diagnostico_id" id="diagnostico_id" value="<?= htmlspecialchars($c['diagnostico_id'] ?? '') ?>">
-  </div>
-      <div id="diagnostico_dropdown" class="dropdown" style="display:none; position:absolute; z-index:1000; left:0; right:0; background:#fff; border:1px solid #ddd; max-height:200px; overflow:auto;"></div>
+      <label class="label">Diagnóstico(s)</label>
+      <div id="diagnosticos_container">
+        <!-- filas dinámicas de diagnóstico serán insertadas aquí -->
+      </div>
+      <div style="margin-top:8px">
+        <button type="button" id="add_diagnostico_btn" class="btn">Agregar diagnóstico</button>
+      </div>
       <div id="err_diagnostico" class="field-error"></div>
     </div>
 
@@ -122,221 +120,142 @@
       <button class="btn primary" type="submit" name="save_changes" value="save">Guardar cambios</button>
     </div>
   </form>
-  <script>
+    <script>
   (function(){
-    const input = document.getElementById('diagnostico_input');
-    const dropdown = document.getElementById('diagnostico_dropdown');
-  let items = [];
-  let selected = -1;
-  let t = null;
-  // diagnosticos provistos por el servidor (si los hay) - array de {id,nombre_enfermedad}
-  const serverDiagnosticos = <?= json_encode($diagnosticos ?? []) ?> || [];
+    // Diagnósticos dinámicos: permite múltiples diagnósticos (mínimo 1)
+    const serverDiagnosticos = <?= json_encode($diagnosticos ?? []) ?> || [];
+    const diagnosticosContainer = document.getElementById('diagnosticos_container');
+    const addBtn = document.getElementById('add_diagnostico_btn');
 
-    function renderDropdown(){
-      dropdown.innerHTML = '';
-      if (!items || items.length === 0) {
-        dropdown.style.display = 'none';
-        return;
-      }
-      items.forEach((it, idx) => {
-        const div = document.createElement('div');
-        div.className = 'dropdown-item';
-        // it can be string or object {id,nombre_enfermedad}
-        const label = (typeof it === 'string') ? it : (it.nombre_enfermedad ?? it.nombre ?? '');
-        div.textContent = label;
-        div.style.padding = '6px 8px';
-        div.style.cursor = 'pointer';
-        if (idx === selected) div.style.background = '#eef';
-        div.addEventListener('mousedown', function(e){
-          // mousedown para evitar blur antes del click
-          e.preventDefault();
-          selectItem(idx);
+    function createDropdown(){
+      const d = document.createElement('div');
+      d.className = 'dropdown';
+      d.style.display = 'none';
+      d.style.position = 'absolute';
+      d.style.zIndex = '1000';
+      d.style.left = '0';
+      d.style.right = '0';
+      d.style.background = '#fff';
+      d.style.border = '1px solid #ddd';
+      d.style.maxHeight = '200px';
+      d.style.overflow = 'auto';
+      return d;
+    }
+
+    function createRow(initial){
+      initial = initial || {};
+      const wrapper = document.createElement('div');
+      wrapper.className = 'diagnostico-row';
+      wrapper.style.position = 'relative';
+      wrapper.style.marginBottom = '8px';
+
+      const inputWrap = document.createElement('div'); inputWrap.className = 'input-with-toggle';
+      const input = document.createElement('input'); input.type = 'text'; input.className = 'input diagnostico-input'; input.autocomplete = 'on';
+      input.value = initial.nombre || '';
+      input.setAttribute('aria-haspopup','listbox'); input.setAttribute('aria-expanded','false');
+      const toggle = document.createElement('button'); toggle.type='button'; toggle.className='toggle-btn'; toggle.title='Mostrar lista de diagnósticos';
+      toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9l6 6l6 -6" /></svg>';
+      const hid = document.createElement('input'); hid.type='hidden'; hid.name='diagnosticos[][id]'; hid.className='diagnostico-id'; hid.value = initial.id || '';
+
+      inputWrap.appendChild(input); inputWrap.appendChild(toggle); inputWrap.appendChild(hid);
+      wrapper.appendChild(inputWrap);
+
+      const dropdown = createDropdown(); wrapper.appendChild(dropdown);
+
+      const actions = document.createElement('div'); actions.style.marginTop='4px';
+      const remove = document.createElement('button'); remove.type='button'; remove.className='btn small danger'; remove.textContent='Eliminar'; remove.style.marginLeft='6px';
+      remove.addEventListener('click', ()=>{ wrapper.remove(); });
+      actions.appendChild(remove);
+      wrapper.appendChild(actions);
+
+      // attach behavior
+      attachAutocomplete(input, hid, dropdown, toggle);
+
+      return wrapper;
+    }
+
+    function attachAutocomplete(input, hid, dropdown, toggle){
+      let items = [];
+      let selected = -1;
+      let t = null;
+
+      function render(){
+        dropdown.innerHTML = '';
+        if (!items || items.length === 0) { dropdown.style.display = 'none'; return; }
+        items.forEach((it, idx) => {
+          const div = document.createElement('div'); div.className='dropdown-item';
+          const label = (typeof it === 'string') ? it : (it.nombre_enfermedad ?? it.nombre ?? '');
+          div.textContent = label; div.style.padding='6px 8px'; div.style.cursor='pointer';
+          if (idx === selected) div.style.background = '#eef';
+          div.addEventListener('mousedown', function(e){ e.preventDefault(); pick(idx); });
+          dropdown.appendChild(div);
         });
-        dropdown.appendChild(div);
-      });
-      dropdown.style.display = 'block';
-    }
-
-    function selectItem(idx){
-      if (idx < 0 || idx >= items.length) return;
-      const it = items[idx];
-      const hid = document.getElementById('diagnostico_id');
-      if (typeof it === 'string') {
-        input.value = it;
-        if (hid) hid.value = '';
-      } else {
-        input.value = it.nombre_enfermedad ?? it.nombre ?? '';
-        if (hid) hid.value = it.id ?? '';
+        dropdown.style.display = 'block';
       }
-      hideDropdown();
-    }
 
-    function hideDropdown(){
-      dropdown.style.display = 'none';
-      selected = -1;
-      items = [];
-    }
-
-    async function fetchDiagnosticos(q){
-      // If server provided a list, filter it client-side for instant response
-      if (serverDiagnosticos && serverDiagnosticos.length > 0) {
-        items = serverDiagnosticos.filter(d => (d.nombre_enfermedad||d.nombre||'').toLowerCase().includes((q||'').toLowerCase()));
-        selected = -1;
-        if (items.length > 0) { renderDropdown(); return; }
-        // otherwise fall through to API
+      function pick(idx){
+        if (idx < 0 || idx >= items.length) return;
+        const it = items[idx];
+        if (typeof it === 'string') { input.value = it; hid.value = ''; }
+        else { input.value = it.nombre_enfermedad ?? it.nombre ?? ''; hid.value = it.id ?? ''; }
+        hide();
       }
-      if (!q || q.length < 1) { hideDropdown(); return; }
-      try{
-        const url = `/api/v1/diagnosticos?q=${encodeURIComponent(q)}`;
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (!res.ok) { hideDropdown(); return; }
-        const json = await res.json();
-        items = json.data || [];
-        selected = -1;
-        renderDropdown();
-      }catch(err){
-        console.error('Error buscando diagnosticos', err);
-        hideDropdown();
+
+      function hide(){ dropdown.style.display='none'; selected=-1; items=[]; }
+
+      async function search(q){
+        if (serverDiagnosticos && serverDiagnosticos.length > 0){ items = serverDiagnosticos.filter(d => (d.nombre_enfermedad||d.nombre||'').toLowerCase().includes((q||'').toLowerCase())); selected=-1; render(); return; }
+        if (!q || q.length < 1) { hide(); return; }
+        try{
+          const url = `/api/v1/diagnosticos?q=${encodeURIComponent(q)}`;
+          const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (!res.ok) { hide(); return; }
+          const json = await res.json(); items = json.data || []; selected=-1; render();
+        }catch(err){ console.error('Error buscando diagnosticos', err); hide(); }
       }
-    }
 
-    // Obtener todos los diagnósticos (para mostrar lista completa al hacer click)
-    async function fetchAllDiagnosticos(){
-      try{
-        if (serverDiagnosticos && serverDiagnosticos.length > 0) {
-          items = serverDiagnosticos;
-          selected = -1;
-          renderDropdown();
-          return;
-        }
-        const url = `/api/v1/diagnosticos`;
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (!res.ok) { hideDropdown(); return; }
-        const json = await res.json();
-        items = json.data || [];
-        selected = -1;
-        renderDropdown();
-      }catch(err){ console.error('Error fetching all diagnosticos', err); hideDropdown(); }
-    }
-
-    input.addEventListener('input', function(e){
-      const v = (e.target.value || '').trim();
-      // Si el usuario está escribiendo, limpiar el hidden para forzar selección
-      const hid = document.getElementById('diagnostico_id');
-      if (hid) hid.value = '';
-      // ocultar cualquier error previo
-      const cerr = document.getElementById('client_error'); if (cerr) cerr.style.display = 'none';
-      if (t) clearTimeout(t);
-      t = setTimeout(()=> fetchDiagnosticos(v), 200);
-    });
-
-    // Cuando el usuario hace click o focus en el input, mostrar la lista completa
-    input.addEventListener('focus', function(){
-      // si ya hay texto y items mostrados no hacemos fetchAll
-      const v = (input.value||'').trim();
-      if (v.length === 0) {
-        fetchAllDiagnosticos();
+      async function fetchAll(){
+        try{
+          if (serverDiagnosticos && serverDiagnosticos.length > 0){ items = serverDiagnosticos; selected=-1; render(); return; }
+          const res = await fetch('/api/v1/diagnosticos', { headers:{ 'Accept':'application/json' } });
+          if (!res.ok) { hide(); return; }
+          const json = await res.json(); items = json.data || []; selected=-1; render();
+        }catch(err){ console.error('Error fetching all diagnosticos', err); hide(); }
       }
-    });
-    input.addEventListener('click', function(){
-      const v = (input.value||'').trim(); if (v.length === 0) fetchAllDiagnosticos();
-    });
 
-    // Toggle button to open the full list
-    const toggle = document.getElementById('diagnostico_toggle');
-    if (toggle) {
-      toggle.addEventListener('click', function(){
-        const expanded = input.getAttribute('aria-expanded') === 'true';
-        if (expanded) { hideDropdown(); input.setAttribute('aria-expanded','false'); }
-        else { fetchAllDiagnosticos(); input.setAttribute('aria-expanded','true'); input.focus(); }
-      });
-      // keyboard activation
+      input.addEventListener('input', function(e){ const v=(e.target.value||'').trim(); hid.value=''; const cerr = document.getElementById('client_error'); if (cerr) cerr.style.display='none'; if (t) clearTimeout(t); t=setTimeout(()=>search(v),200); });
+      input.addEventListener('focus', function(){ const v=(input.value||'').trim(); if (v.length===0) fetchAll(); });
+      input.addEventListener('click', function(){ const v=(input.value||'').trim(); if (v.length===0) fetchAll(); });
+
+      toggle.addEventListener('click', function(){ const expanded = input.getAttribute('aria-expanded') === 'true'; if (expanded){ hide(); input.setAttribute('aria-expanded','false'); } else { fetchAll(); input.setAttribute('aria-expanded','true'); input.focus(); } });
       toggle.addEventListener('keydown', function(e){ if (e.key==='Enter' || e.key===' ') { e.preventDefault(); toggle.click(); } });
+
+      input.addEventListener('keydown', function(e){ if (dropdown.style.display==='none') return; if (e.key==='ArrowDown'){ e.preventDefault(); selected = Math.min(selected+1, items.length-1); render(); } else if (e.key==='ArrowUp'){ e.preventDefault(); selected = Math.max(selected-1, 0); render(); } else if (e.key==='Enter'){ if (selected>=0){ e.preventDefault(); pick(selected); } } else if (e.key==='Escape'){ hide(); } });
+
+      document.addEventListener('click', function(e){ if (!input.contains(e.target) && !dropdown.contains(e.target) && !toggle.contains(e.target)) { hide(); } });
     }
 
-  // Validación antes de enviar: diagnostico_id, observaciones, al menos una receta (salvo ausente) y estado_postconsulta obligatorios
+    // Prefill: si hay diagnósticos guardados en servidor (detalle_consulta)
+    const serverDiagnosticosPrefill = <?= json_encode($consulta_diagnosticos ?? ($c['diagnosticos'] ?? ($c->diagnosticos ?? []))) ?> || [];
+    if (Array.isArray(serverDiagnosticosPrefill) && serverDiagnosticosPrefill.length > 0) {
+      serverDiagnosticosPrefill.forEach(function(d){ diagnosticosContainer.appendChild(createRow({id:d.id, nombre:d.nombre})); });
+    } else {
+      diagnosticosContainer.appendChild(createRow());
+    }
+
+    if (addBtn) addBtn.addEventListener('click', function(){ diagnosticosContainer.appendChild(createRow()); });
+
+    // Form submit validation: exigir al menos un diagnóstico con id
     (function(){
-      const form = input.closest('form');
-      if (!form) return;
-      function showClientError(msg){
-        const el = document.getElementById('client_error');
-        if (!el) { alert(msg); return; }
-        el.textContent = msg; el.style.display = 'block'; el.scrollIntoView({behavior:'smooth', block:'center'});
-      }
-
+      const form = document.querySelector('form[action^="/citas/"]'); if (!form) return;
       form.addEventListener('submit', function(e){
-        // Asumimos que el botón es 'atendido' en este formulario
-        const hid = document.getElementById('diagnostico_id');
-        const obs = (document.querySelector('textarea[name="observaciones"]')?.value || '').trim();
-        // comprobar si hay al menos una receta no-vacía
-        const recetaRows = Array.from(document.querySelectorAll('.receta-row'));
-        const recEmpty = recetaRows.length === 0 || recetaRows.every(r => {
-          const med = r.querySelector('select[name="recetas[][id_medicamento]"]');
-          const ind = r.querySelector('textarea[name="recetas[][indicacion]"]');
-          const dur = r.querySelector('input[name="recetas[][duracion]"]');
-          const has = ((med && med.value) || (ind && ind.value && ind.value.trim() !== '') || (dur && dur.value && dur.value.trim() !== ''));
-          return !has;
-        });
-        const estado = (document.querySelector('select[name="estado_postconsulta"]')?.value || '').trim();
-        // limpiar errores previos por campo
-        function clearFieldErr(id){ const el = document.getElementById(id); if (el) { el.textContent=''; el.classList.remove('visible'); } }
-        function setFieldErr(fieldEl, errId, msg){ if (fieldEl) fieldEl.classList.add('invalid'); const e = document.getElementById(errId); if (e) { e.textContent = msg; e.classList.add('visible'); } }
-        function clearAllFieldErrs(){ ['err_diagnostico','err_observaciones','err_receta','err_estado'].forEach(id=>{ const e=document.getElementById(id); if(e){e.textContent=''; e.classList.remove('visible');} });
-          // remove invalid class
-          const fields = [document.getElementById('diagnostico_input'), document.querySelector('textarea[name="observaciones"]'), document.querySelector('select[name="estado_postconsulta"]')];
-          fields.forEach(f=>{ if(f) f.classList.remove('invalid'); });
-        }
-
-        clearAllFieldErrs();
-
-        let firstInvalid = null;
-        if (!hid || (hid.value || '').trim() === ''){
-          e.preventDefault(); setFieldErr(document.getElementById('diagnostico_input'),'err_diagnostico','Debes seleccionar un diagnóstico existente de la lista. No se permiten crear diagnósticos nuevos desde aquí.'); firstInvalid = firstInvalid || document.getElementById('diagnostico_input');
-        }
-        if (estado === ''){ e.preventDefault(); setFieldErr(document.querySelector('select[name="estado_postconsulta"]'),'err_estado','El estado postconsulta es obligatorio.'); firstInvalid = firstInvalid || document.querySelector('select[name="estado_postconsulta"]'); }
-        if (obs === ''){ e.preventDefault(); setFieldErr(document.querySelector('textarea[name="observaciones"]'),'err_observaciones','Las observaciones no pueden estar vacías.'); firstInvalid = firstInvalid || document.querySelector('textarea[name="observaciones"]'); }
-        if (recEmpty && hid && hid.value !== '' ){ e.preventDefault(); setFieldErr(document.getElementById('add_receta_btn'),'err_receta','Debes agregar al menos una receta con medicamento, indicación o duración.'); firstInvalid = firstInvalid || document.getElementById('add_receta_btn'); }
-
-        // VALIDACIÓN ADICIONAL: por cada fila de receta que contenga algún dato, exigir
-        // que los campos `indicacion` y `duracion` no estén vacíos.
-        if (!recEmpty) {
-          let recetaFieldInvalid = false;
-          for (let i = 0; i < recetaRows.length; i++) {
-            const r = recetaRows[i];
-            const med = r.querySelector('select[name="recetas[][id_medicamento]"]');
-            const ind = r.querySelector('textarea[name="recetas[][indicacion]"]');
-            const dur = r.querySelector('input[name="recetas[][duracion]"]');
-            const anyFilled = (med && med.value) || (ind && ind.value && ind.value.trim() !== '') || (dur && dur.value && dur.value.trim() !== '');
-            if (anyFilled) {
-              // validar indicacion
-              if (!ind || (ind.value || '').trim() === '') {
-                e.preventDefault();
-                recetaFieldInvalid = true;
-                setFieldErr(ind || document.getElementById('add_receta_btn'), 'err_receta', 'Cada receta requiere indicación (no puede estar vacía).');
-                firstInvalid = firstInvalid || (ind || document.getElementById('add_receta_btn'));
-              }
-              // validar duracion
-              if (!dur || (dur.value || '').trim() === '') {
-                e.preventDefault();
-                recetaFieldInvalid = true;
-                // si ya marcamos indicacion, evitar sobrescribir el mensaje; de lo contrario mostrar mensaje genérico
-                if (!ind || (ind.value || '').trim() === '') {
-                  setFieldErr(dur || document.getElementById('add_receta_btn'), 'err_receta', 'Cada receta requiere duración (no puede estar vacía).');
-                } else {
-                  setFieldErr(dur || document.getElementById('add_receta_btn'), 'err_receta', 'La duración no puede estar vacía.');
-                }
-                firstInvalid = firstInvalid || (dur || document.getElementById('add_receta_btn'));
-              }
-            }
-          }
-          if (recetaFieldInvalid) {
-            // si hay error en filas de receta, enfocamos el primer campo inválido
-            // (firstInvalid se asignó arriba)
-          }
-        }
-
-        if (firstInvalid) {
-          firstInvalid.focus();
+        // limpiar errores previos
+        const errDiag = document.getElementById('err_diagnostico'); if (errDiag){ errDiag.textContent=''; errDiag.classList.remove('visible'); }
+        const diagRows = Array.from(document.querySelectorAll('.diagnostico-row'));
+        const hasValid = diagRows.some(r => { const hid = r.querySelector('.diagnostico-id'); return hid && (hid.value||'').trim() !== ''; });
+        if (!hasValid){ e.preventDefault(); if (errDiag){ errDiag.textContent = 'Debes seleccionar al menos un diagnóstico existente de la lista.'; errDiag.classList.add('visible'); }
+          // focus on first input
+          const firstInput = document.querySelector('.diagnostico-input'); if (firstInput) firstInput.focus();
         }
       });
     })();
