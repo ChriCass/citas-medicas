@@ -307,7 +307,7 @@ class AppointmentController
                 $consultaDiagnosticos = DB::table('detalle_consulta')
                     ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                     ->where('detalle_consulta.id_consulta', $consulta->id)
-                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                     ->get()->map(function($r){ return (array)$r; })->toArray();
             }
         } catch (\Throwable $e) {
@@ -382,7 +382,7 @@ class AppointmentController
                     $consultaDiagnosticos = DB::table('detalle_consulta')
                         ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                         ->where('detalle_consulta.id_consulta', $consultaObj->id)
-                        ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                        ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                         ->get()->map(function($r){ return (array)$r; })->toArray();
                 }
                 return $res->view('citas/attend', [
@@ -406,7 +406,7 @@ class AppointmentController
                         $consultaDiagnosticos = DB::table('detalle_consulta')
                             ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                             ->where('detalle_consulta.id_consulta', $consultaObj->id)
-                            ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                            ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                             ->get()->map(function($r){ return (array)$r; })->toArray();
                     }
                     return $res->view('citas/attend', [
@@ -533,7 +533,7 @@ class AppointmentController
                 $consultaDiagnosticos = DB::table('detalle_consulta')
                     ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                     ->where('detalle_consulta.id_consulta', $consultaObj->id)
-                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                     ->get()->map(function($r){ return (array)$r; })->toArray();
             }
             return $res->view('citas/attend', [
@@ -594,7 +594,7 @@ class AppointmentController
                 $consultaDiagnosticos = DB::table('detalle_consulta')
                     ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                     ->where('detalle_consulta.id_consulta', $consulta->id)
-                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                     ->get()->map(function($r){ return (array)$r; })->toArray();
                 // añadir al array de consulta para compatibilidad con la vista
                 if (is_array($consultaArr)) $consultaArr['diagnosticos'] = $consultaDiagnosticos;
@@ -759,7 +759,7 @@ class AppointmentController
                 $consultaDiagnosticos = DB::table('detalle_consulta')
                     ->join('diagnosticos', 'detalle_consulta.id_diagnostico', '=', 'diagnosticos.id')
                     ->where('detalle_consulta.id_consulta', $consultaObj->id)
-                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, diagnosticos.nombre) as nombre"))
+                    ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                     ->get()->map(function($r){ return (array)$r; })->toArray();
             }
             return $res->view('citas/edit', [

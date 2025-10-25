@@ -274,30 +274,8 @@
     const obsEl = document.querySelector('textarea[name="observaciones"]'); if (obsEl) obsEl.addEventListener('input', ()=>{ obsEl.classList.remove('invalid'); const e=document.getElementById('err_observaciones'); if(e){ e.textContent=''; e.classList.remove('visible'); } });
     const estadoEl = document.querySelector('select[name="estado_postconsulta"]'); if (estadoEl) estadoEl.addEventListener('change', ()=>{ estadoEl.classList.remove('invalid'); const e=document.getElementById('err_estado'); if(e){ e.textContent=''; e.classList.remove('visible'); } });
 
-    input.addEventListener('keydown', function(e){
-      if (dropdown.style.display === 'none') return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault(); selected = Math.min(selected + 1, items.length - 1); renderDropdown();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault(); selected = Math.max(selected - 1, 0); renderDropdown();
-      } else if (e.key === 'Enter') {
-        if (selected >= 0) { e.preventDefault(); selectItem(selected); }
-      } else if (e.key === 'Escape') { hideDropdown(); }
-    });
-
-    document.addEventListener('click', function(e){
-      if (!input.contains(e.target) && !dropdown.contains(e.target)) hideDropdown();
-    });
-
-    // Inicializar: NO abrir el dropdown automáticamente al cargar la vista.
-    // Si el input ya tiene texto, no hacemos fetch ni mostramos la lista; el médico podrá
-    // abrirla mediante el toggle o al borrar/editar el texto.
-    (function(){
-      try{
-        input.setAttribute('aria-expanded','false');
-        dropdown.style.display = 'none';
-      }catch(e){ /* no crítico */ }
-    })();
+    // Nota: la lógica de autocompletado está encapsulada por fila en attachAutocomplete.
+    // Evitamos duplicar manejadores globales que referencian variables locales.
 
     // ---------- Recetas dynamic UI ----------
     const recetasContainer = document.getElementById('recetas_container');
