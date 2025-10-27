@@ -4,9 +4,9 @@
 <section class="hero">
   <div>
     <h1><?= htmlspecialchars($title ?? 'Horarios Doctores') ?></h1>
-    <p class="mt-2">Administra turnos por <strong>doctor</strong>, <strong>sede</strong> y <strong>fecha específica</strong>.</p>
+    <p class="mt-2">Administra <strong>patrones semanales</strong> de horarios por <strong>doctor</strong> y <strong>sede</strong>.</p>
     <div class="auth-links mt-3">
-      <a href="/doctor-schedules/create" class="btn primary">+ Nuevo horario</a>
+      <a href="/doctor-schedules/create" class="btn primary">+ Nuevo patrón</a>
     </div>
   </div>
 </section>
@@ -14,7 +14,7 @@
 <section class="mt-6">
   <?php if (empty($schedules)): ?>
     <div class="card"><div class="content">
-      <p class="muted">No hay horarios registrados.</p>
+      <p class="muted">No hay patrones de horario registrados.</p>
     </div></div>
   <?php else: ?>
     <div class="table-wrapper">
@@ -23,10 +23,9 @@
           <tr>
             <th>Doctor</th>
             <th>Sede</th>
-            <th>Fecha</th>
-            <th>Día</th>
-            <th>Inicio</th>
-            <th>Fin</th>
+            <th>Día de la semana</th>
+            <th>Hora inicio</th>
+            <th>Hora fin</th>
             <th>Estado</th>
             <th>Observaciones</th>
             <th>Acciones</th>
@@ -36,28 +35,24 @@
         <?php foreach ($schedules as $h): ?>
           <tr>
             <td>
-              <?= htmlspecialchars($h['doctor_name'] ?? '') ?><br>
-              <small class="muted"><?= htmlspecialchars($h['doctor_email'] ?? '') ?></small>
+              <?= htmlspecialchars($h->doctor->user->nombre ?? '') ?> <?= htmlspecialchars($h->doctor->user->apellido ?? '') ?><br>
+              <small class="muted"><?= htmlspecialchars($h->doctor->user->email ?? '') ?></small>
             </td>
-            <td><?= htmlspecialchars($h['sede_nombre'] ?? 'Sin sede') ?></td>
+            <td><?= htmlspecialchars($h->sede->nombre_sede ?? 'Cualquier sede') ?></td>
             <td>
-              <?php 
-                $fecha = $h['fecha'] ?? '';
-                echo htmlspecialchars(date('d/m/Y', strtotime($fecha))); 
-              ?>
+              <strong><?= htmlspecialchars(ucfirst($h->dia_semana ?? '')) ?></strong>
             </td>
-            <td><?= htmlspecialchars($h['dia_nombre'] ?? '') ?></td>
-            <td><?= htmlspecialchars(substr((string)$h['hora_inicio'],0,5)) ?></td>
-            <td><?= htmlspecialchars(substr((string)$h['hora_fin'],0,5)) ?></td>
+            <td><?= htmlspecialchars(substr((string)$h->hora_inicio, 0, 5)) ?></td>
+            <td><?= htmlspecialchars(substr((string)$h->hora_fin, 0, 5)) ?></td>
             <td>
-              <span class="badge <?= ($h['activo'] ?? 1) ? 'success' : 'danger' ?>">
-                <?= ($h['activo'] ?? 1) ? 'Activo' : 'Inactivo' ?>
+              <span class="badge <?= $h->activo ? 'success' : 'danger' ?>">
+                <?= $h->activo ? 'Activo' : 'Inactivo' ?>
               </span>
             </td>
-            <td><?= htmlspecialchars($h['observaciones'] ?? '') ?></td>
+            <td><?= htmlspecialchars($h->observaciones ?? '') ?></td>
             <td>
-              <form method="POST" action="/doctor-schedules/<?= (int)$h['id'] ?>/delete"
-                    onsubmit="return confirm('¿Eliminar este horario?');" style="display:inline">
+              <form method="POST" action="/doctor-schedules/<?= (int)$h->id ?>/delete"
+                    onsubmit="return confirm('¿Eliminar este patrón de horario?');" style="display:inline">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
                 <button type="submit" class="btn small danger">Eliminar</button>
               </form>

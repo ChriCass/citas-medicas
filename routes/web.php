@@ -35,3 +35,7 @@ $router->get('/doctor-schedules',          [DoctorScheduleController::class, 'in
 $router->get('/doctor-schedules/create',   [DoctorScheduleController::class, 'create'], ['auth']);
 $router->post('/doctor-schedules',         [DoctorScheduleController::class, 'store'],  ['auth']);
 $router->post('/doctor-schedules/{id}/delete', [DoctorScheduleController::class, 'destroy'], ['auth']);
+// Ruta para asignación masiva de horarios (UC-09)
+$router->post('/doctor-schedules/assign',  [DoctorScheduleController::class, 'assign'], ['auth']);
+// Endpoint AJAX: obtener sedes de un doctor
+$router->get('/doctors/{id}/sedes', [DoctorScheduleController::class, 'doctorSedes'], ['auth']);

@@ -13,7 +13,6 @@ class DoctorSchedule extends BaseModel
     ];
     
     protected $casts = [
-        'fecha' => 'date',
         'hora_inicio' => 'datetime:H:i:s',
         'hora_fin' => 'datetime:H:i:s',
         'activo' => 'boolean'
@@ -39,9 +38,11 @@ class DoctorSchedule extends BaseModel
     // Métodos estáticos para compatibilidad
     public static function listAll(): \Illuminate\Database\Eloquent\Collection
     {
+        // La tabla `horarios_medicos` puede no tener columna `fecha` (patrones por día de semana),
+        // ordenar por `dia_semana` y luego por hora de inicio para mostrar en UI.
         return static::with(['doctor.user', 'sede'])
                      ->active()
-                     ->orderBy('fecha')
+                     ->orderBy('dia_semana')
                      ->orderBy('hora_inicio')
                      ->get();
     }

@@ -60,8 +60,16 @@ if (!$date || !$doctorId) {
 return $res->json(['message'=>'Bad Request (date, doctor_id requeridos)'], 400);
 }
 try {
-$slots = Availability::slotsForDate(new \DateTimeImmutable($date), $doctorId, $locationId);
-return $res->json(['date'=>$date, 'slot_minutes'=>\App\Core\Availability::SLOT_MINUTES, 'slots'=>$slots]);
+// Usar el servicio híbrido para obtener o generar disponibilidad
+$service = new \App\Services\ScheduleGeneratorService();
+$availability = $service->getOrGenerateAvailability($doctorId, $date, $locationId ?: null);
+
+return $res->json([
+    'date' => $date,
+    'calendario_id' => $availability['calendario_id'],
+    'slot_minutes' => 15,
+    'slots' => $availability['slots']
+]);
 } catch(\Throwable $e) {
 return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
 }
