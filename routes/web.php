@@ -1,5 +1,5 @@
 <?php
-use App\Controllers\{HomeController,AuthController,AppointmentController,DoctorScheduleController};
+use App\Controllers\{HomeController,AuthController,AppointmentController,DoctorScheduleController,UserController};
 
 $router->get('/', [HomeController::class, 'index']);
 $router->get('/dashboard', [HomeController::class, 'dashboard'], ['auth']);
@@ -24,3 +24,18 @@ $router->get('/doctor-schedules',          [DoctorScheduleController::class, 'in
 $router->get('/doctor-schedules/create',   [DoctorScheduleController::class, 'create'], ['auth']);
 $router->post('/doctor-schedules',         [DoctorScheduleController::class, 'store'],  ['auth']);
 $router->post('/doctor-schedules/{id}/delete', [DoctorScheduleController::class, 'destroy'], ['auth']);
+
+// Gestión de Usuarios (solo superadmin; el controlador valida el rol)
+$router->get('/users', [UserController::class, 'index'], ['auth']);
+$router->get('/users/create', [UserController::class, 'create'], ['auth']);
+$router->get('/api/users', [UserController::class, 'apiList'], ['auth']);
+$router->get('/api/users/{id}', [UserController::class, 'apiShow'], ['auth']);
+$router->post('/api/users', [UserController::class, 'store'], ['auth']);
+$router->post('/api/users/{id}', [UserController::class, 'updateOrDelete'], ['auth']);
+$router->delete('/api/users/{id}', [UserController::class, 'destroy'], ['auth']);
+
+// Endpoint para especialidades (para formulario de usuarios)
+$router->get('/api/especialidades', [UserController::class, 'getEspecialidades'], ['auth']);
+
+// Endpoint para verificar relaciones antes de eliminar usuario
+$router->get('/api/users/{id}/relationships', [UserController::class, 'getUserRelationships'], ['auth']);

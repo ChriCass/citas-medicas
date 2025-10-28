@@ -3,8 +3,9 @@
   "description": "Scaffold PHP (MVC) con roles y MySQL/SQL Server usando Eloquent ORM",
   "type": "project",
   "require": {
-    "illuminate/database": "^10.0",
-    "illuminate/events": "^10.0"
+    "illuminate/database": "^10.49",
+    "illuminate/events": "^10.49",
+    "nesbot/carbon": "^2.73"
   },
   "autoload": {
     "psr-4": {

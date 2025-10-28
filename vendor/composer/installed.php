@@ -3,7 +3,7 @@
         'name' => 'acme/php-mvc-scaffolding-roles',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '96d010ba2e40ab469f77492d0222de909af4fdde',
+        'reference' => '33268e44acf3c3b1003dbef3e67da9c5ef9495df',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'acme/php-mvc-scaffolding-roles' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '96d010ba2e40ab469f77492d0222de909af4fdde',
+            'reference' => '33268e44acf3c3b1003dbef3e67da9c5ef9495df',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
