@@ -47,6 +47,7 @@ class Especialidad extends SimpleModel
             return false;
         }
         
-        return $especialidad->update($id, $data);
+        $especialidad->update($id, $data);
+        return true;
     }
 }
