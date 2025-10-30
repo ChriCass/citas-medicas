@@ -2,6 +2,15 @@
 // Vista: formulario para CREAR HORARIOS semanales (Step 1: Admin define schedule patterns)
 // Espera: $title, $doctors, $sedes, $error (opcional) y $old (opcional)
 $role = $_SESSION['user']['rol'] ?? '';
+// Lista explícita de opciones de tiempo (cada 15 minutos, 08:00 - 19:30)
+$timeOptions = [
+  '08:00','08:15','08:30','08:45','09:00','09:15','09:30','09:45',
+  '10:00','10:15','10:30','10:45','11:00','11:15','11:30','11:45',
+  '12:00','12:15','12:30','12:45','13:00','13:15','13:30','13:45',
+  '14:00','14:15','14:30','14:45','15:00','15:15','15:30','15:45',
+  '16:00','16:15','16:30','16:45','17:00','17:15','17:30','17:45',
+  '18:00','18:15','18:30','18:45','19:00','19:15','19:30'
+];
 ?>
 <?php if ($role !== 'superadmin'): ?>
   <div class="alert">No tienes acceso a esta pantalla.</div>
@@ -31,27 +40,40 @@ $role = $_SESSION['user']['rol'] ?? '';
   </div>
 
   <div class="row compact">
-    <label class="label">Mes y Año</label>
-    <div style="display:flex;gap:8px;align-items:center;">
+    <label class="label">Mes</label>
+    <div style="display:flex;gap:8px;align-items:center;flex-direction:column;align-items:flex-start;">
       <select name="mes" id="mes" class="input" required>
-        <?php
-          $months = [1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'];
-          $oldMonth = !empty($old['mes']) ? (int)$old['mes'] : (int)date('n');
-          foreach ($months as $num => $name):
-        ?>
-          <option value="<?= $num ?>" <?= $oldMonth===$num? 'selected':'' ?>><?= htmlspecialchars($name) ?></option>
-        <?php endforeach; ?>
-      </select>
+          <?php
+            $months = [1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'];
+            $now = (int)date('n');
 
-      <select name="anio" id="anio" class="input" required>
+            // Si estamos en diciembre, mostrar todos los meses. En otro caso, mostrar desde el mes actual hasta diciembre.
+            if ($now === 12) {
+              $available = $months;
+            } else {
+              $available = [];
+              for ($m = $now; $m <= 12; $m++) {
+                $available[$m] = $months[$m];
+              }
+            }
+
+            $oldMonth = !empty($old['mes']) ? (int)$old['mes'] : $now;
+            // Si el mes anterior seleccionado no está en la lista permitida, usar el mes actual
+            if (!isset($available[$oldMonth])) {
+              $oldMonth = $now;
+            }
+
+            foreach ($available as $num => $name):
+          ?>
+            <option value="<?= $num ?>" <?= $oldMonth===$num? 'selected':'' ?>><?= htmlspecialchars($name) ?></option>
+          <?php endforeach; ?>
+        </select>
         <?php
-          $startYear = (int)date('Y');
-          $oldYear = !empty($old['anio']) ? (int)$old['anio'] : $startYear;
-          for ($y = $startYear; $y <= $startYear + 2; $y++):
+          $now = (int)date('n');
+          $currentYear = (int)date('Y');
+          $nextYear = $currentYear + 1;
         ?>
-          <option value="<?= $y ?>" <?= $oldYear===$y? 'selected':'' ?>><?= $y ?></option>
-        <?php endfor; ?>
-      </select>
+        <small class="hint" style="margin-top:6px;">Año utilizado: <?= ($now === 12 && (int)($old['mes'] ?? $now) !== 12) ? $nextYear : $currentYear ?>. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).</small>
     </div>
   </div>
 
@@ -100,17 +122,17 @@ $role = $_SESSION['user']['rol'] ?? '';
               <td style="padding:6px;vertical-align:middle;">
                 <select name="horarios_inicio[<?= htmlspecialchars($dayKey) ?>]" class="input time-24 start-select">
                   <option value="">—</option>
-                  <?php for ($m = 8*60; $m <= 19*60 + 30; $m += 15): $hh = str_pad(intval($m / 60), 2, '0', STR_PAD_LEFT); $mm = str_pad($m % 60, 2, '0', STR_PAD_LEFT); $t = $hh . ':' . $mm; ?>
-                    <option value="<?= $t ?>" <?= ($oldStart === $t) ? 'selected' : '' ?>><?= $t ?></option>
-                  <?php endfor; ?>
+                  <?php foreach ($timeOptions as $t): ?>
+                    <option value="<?= htmlspecialchars($t) ?>" <?= ($oldStart === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
+                  <?php endforeach; ?>
                 </select>
               </td>
               <td style="padding:6px;vertical-align:middle;">
                 <select name="horarios_fin[<?= htmlspecialchars($dayKey) ?>]" class="input time-24 end-select">
                   <option value="">—</option>
-                  <?php for ($m = 8*60; $m <= 19*60 + 30; $m += 15): $hh = str_pad(intval($m / 60), 2, '0', STR_PAD_LEFT); $mm = str_pad($m % 60, 2, '0', STR_PAD_LEFT); $t = $hh . ':' . $mm; ?>
-                    <option value="<?= $t ?>" <?= ($oldEnd === $t) ? 'selected' : '' ?>><?= $t ?></option>
-                  <?php endfor; ?>
+                  <?php foreach ($timeOptions as $t): ?>
+                    <option value="<?= htmlspecialchars($t) ?>" <?= ($oldEnd === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
+                  <?php endforeach; ?>
                 </select>
               </td>
               <td style="padding:6px;vertical-align:middle;">
@@ -153,17 +175,17 @@ $role = $_SESSION['user']['rol'] ?? '';
       <td style="padding:6px;vertical-align:middle;">
         <select name="horarios_inicio[]" class="input time-24 start-select">
           <option value="">—</option>
-          <?php for ($m = 8*60; $m <= 19*60 + 30; $m += 15): $hh = str_pad(intval($m / 60), 2, '0', STR_PAD_LEFT); $mm = str_pad($m % 60, 2, '0', STR_PAD_LEFT); $t = $hh . ':' . $mm; ?>
-            <option value="<?= $t ?>"><?= $t ?></option>
-          <?php endfor; ?>
+          <?php foreach ($timeOptions as $t): ?>
+            <option value="<?= htmlspecialchars($t) ?>"><?= htmlspecialchars($t) ?></option>
+          <?php endforeach; ?>
         </select>
       </td>
       <td style="padding:6px;vertical-align:middle;">
         <select name="horarios_fin[]" class="input time-24 end-select">
           <option value="">—</option>
-          <?php for ($m = 8*60; $m <= 19*60 + 30; $m += 15): $hh = str_pad(intval($m / 60), 2, '0', STR_PAD_LEFT); $mm = str_pad($m % 60, 2, '0', STR_PAD_LEFT); $t = $hh . ':' . $mm; ?>
-            <option value="<?= $t ?>"><?= $t ?></option>
-          <?php endfor; ?>
+          <?php foreach ($timeOptions as $t): ?>
+            <option value="<?= htmlspecialchars($t) ?>"><?= htmlspecialchars($t) ?></option>
+          <?php endforeach; ?>
         </select>
       </td>
       <td style="padding:6px;vertical-align:middle;">
@@ -220,6 +242,98 @@ $role = $_SESSION['user']['rol'] ?? '';
       return [];
     };
 
+    // --- Días usados (horarios) del doctor y filtrado de días disponibles ---
+    window.usedDays = window.usedDays || [];
+    var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
+    var FULL_DAY_KEYS = Object.keys(DAYS_OPTS); // ['lunes','martes',...]
+
+    window.normalizeStr = function(s) {
+      if (s === null || s === undefined) return '';
+      return String(s).toLowerCase().trim()
+        .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i')
+        .replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/ü/g, 'u')
+        .replace(/ñ/g, 'n');
+    }
+
+    window.mapNumberToKey = function(n) {
+      var m = parseInt(n, 10);
+      if (isNaN(m)) return null;
+      // try 1=lunes..7=domingo
+      var convA = {1:'lunes',2:'martes',3:'miércoles',4:'jueves',5:'viernes',6:'sábado',7:'domingo'};
+      // try 0=domingo,1=lunes..6=sábado
+      var convB = {0:'domingo',1:'lunes',2:'martes',3:'miércoles',4:'jueves',5:'viernes',6:'sábado'};
+      if (convA[m] && FULL_DAY_KEYS.indexOf(convA[m]) !== -1) return convA[m];
+      if (convB[m] && FULL_DAY_KEYS.indexOf(convB[m]) !== -1) return convB[m];
+      return null;
+    }
+
+    window.normalizeDayValue = function(v) {
+      if (v === null || v === undefined) return null;
+      if (!isNaN(parseInt(v,10)) && String(v).trim() !== '') {
+        var byNum = mapNumberToKey(v);
+        if (byNum) return byNum;
+      }
+      var s = normalizeStr(v);
+      for (var i=0;i<FULL_DAY_KEYS.length;i++){
+        var key = FULL_DAY_KEYS[i];
+        if (normalizeStr(key) === s) return key;
+        if (normalizeStr(DAYS_OPTS[key]) === s) return key;
+      }
+      return null;
+    }
+
+    window.loadUsedDays = async function(doctorId){
+      if (!doctorId) { window.usedDays = []; window.updateAllDaySelects(); return; }
+      try {
+        var res = await fetch('/doctors/' + encodeURIComponent(doctorId) + '/used-days', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        var list = Array.isArray(data) ? data : [];
+        var norm = [];
+        list.forEach(function(it){ var k = normalizeDayValue(it); if (k && norm.indexOf(k) === -1) norm.push(k); });
+        window.usedDays = norm;
+      } catch (err) {
+        console.warn('[UsedDays] Error loading:', err);
+        window.usedDays = [];
+      }
+      window.updateAllDaySelects();
+    }
+
+    window.getSelectedDays = function() {
+      var vals = [];
+      Array.prototype.forEach.call(document.querySelectorAll('.day-select'), function(s){ var v = (s.value||'').trim(); if (v) vals.push(v); });
+      return vals;
+    }
+
+    window.populateDaySelectWithAvailableDays = function(sel) {
+      if (!sel) return;
+      var current = sel.value || '';
+      // compute available = FULL_DAY_KEYS - usedDays
+      var available = FULL_DAY_KEYS.filter(function(k){ return (window.usedDays||[]).indexOf(k) === -1; });
+      // Also exclude days already selected in other rows (to keep uniqueness)
+      var selectedElsewhere = window.getSelectedDays();
+      // Build options
+      sel.innerHTML = '';
+      var def = document.createElement('option'); def.value=''; def.textContent='— Selecciona día —'; sel.appendChild(def);
+      available.forEach(function(k){
+        // skip if selected elsewhere and not the current value
+        if (selectedElsewhere.indexOf(k) !== -1 && k !== current) return;
+        var opt = document.createElement('option'); opt.value = k; opt.textContent = DAYS_OPTS[k]; if (k === current) opt.selected = true; sel.appendChild(opt);
+      });
+      // If current value is not in options (maybe because it's now used), keep it as an option so user's selection isn't lost
+      if (current) {
+        var found = Array.prototype.some.call(sel.options, function(o){ return o.value === current; });
+        if (!found) {
+          var keep = document.createElement('option'); keep.value = current; keep.textContent = DAYS_OPTS[current] || current; keep.selected = true; sel.appendChild(keep);
+        }
+      }
+    }
+
+    window.updateAllDaySelects = function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.day-select'), function(s){ window.populateDaySelectWithAvailableDays(s); });
+    }
+
+
     async function loadSedes(doctorId){
       if (!doctorId) {
         window.cachedSedes = [];
@@ -261,8 +375,11 @@ $role = $_SESSION['user']['rol'] ?? '';
       });
     }
 
-    if (doctorSelect.value) loadSedes(doctorSelect.value);
-    
+    if (doctorSelect.value) {
+      loadSedes(doctorSelect.value);
+      loadUsedDays(doctorSelect.value);
+    }
+
     doctorSelect.addEventListener('change', function(){
       window.cachedSedes = [];
       var selects = document.querySelectorAll('.sede-select');
@@ -274,6 +391,7 @@ $role = $_SESSION['user']['rol'] ?? '';
         sel.appendChild(def);
       });
       loadSedes(this.value);
+      loadUsedDays(this.value);
     });
   })();
 </script>
@@ -379,46 +497,55 @@ $role = $_SESSION['user']['rol'] ?? '';
       if (daySel) {
         daySel.addEventListener('change', function(){
           updateNamesForRow(row);
-          refreshDayOptions();
+          if (window.updateAllDaySelects) window.updateAllDaySelects(); else refreshDayOptions();
         });
       }
       if (rem) rem.addEventListener('click', function(){
         row.parentNode.removeChild(row);
-        refreshDayOptions();
+        if (window.updateAllDaySelects) window.updateAllDaySelects(); else refreshDayOptions();
       });
       updateNamesForRow(row);
     }
 
-    Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function(r){ attachRow(r); });
-    refreshDayOptions();
+    // populate existing rows with filtered day options then attach handlers
+    Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function(r){
+      var ds = r.querySelector('.day-select');
+      if (ds && window.populateDaySelectWithAvailableDays) window.populateDaySelectWithAvailableDays(ds);
+      attachRow(r);
+    });
+    try { if (window.updateAllDaySelects) window.updateAllDaySelects(); else refreshDayOptions(); } catch(e) {}
 
     addBtn.addEventListener('click', function(){
-      var frag = template.content.cloneNode(true);
-      var tr = frag.querySelector('tr');
-      if (!tr) return;
-      
-      var startSel = tr.querySelector('.start-select');
-      var endSel = tr.querySelector('.end-select');
-      var sedeSel = tr.querySelector('.sede-select');
-      
+      // Clone template and append fragment to tbody (more robust across browsers)
+      var clone = template.content.cloneNode(true);
+      // Append the fragment (will insert the <tr> into tbody)
+      tbody.appendChild(clone);
+
+      // The newly appended row should be the last tr in tbody
+      var newRow = tbody.querySelector('tr:last-child');
+      if (!newRow) return;
+
+      // Ensure names on selects are set
+      var startSel = newRow.querySelector('.start-select');
+      var endSel = newRow.querySelector('.end-select');
+      var sedeSel = newRow.querySelector('.sede-select');
       if (startSel) startSel.name = 'horarios_inicio[]';
       if (endSel) endSel.name = 'horarios_fin[]';
       if (sedeSel) sedeSel.name = 'sede_for_day[]';
-      
-      tbody.appendChild(tr);
-      
-      var listToUse = (window.cachedSedes && window.cachedSedes.length) 
-        ? window.cachedSedes 
-        : window.buildSedesFromDOM();
-      
-      window.populateSedeSelect(sedeSel, listToUse);
-      
-      attachRow(tr);
-      refreshDayOptions();
-      
+
+  var listToUse = (window.cachedSedes && window.cachedSedes.length) ? window.cachedSedes : window.buildSedesFromDOM();
+  if (sedeSel) window.populateSedeSelect(sedeSel, listToUse);
+
+  // populate day-select of the new row using filtered available days
+  var daySel = newRow.querySelector('.day-select');
+  if (daySel && window.populateDaySelectWithAvailableDays) window.populateDaySelectWithAvailableDays(daySel);
+
+  attachRow(newRow);
+  // rebuild day selects / options
+  try { if (window.updateAllDaySelects) window.updateAllDaySelects(); else refreshDayOptions(); } catch (e) { console.warn('updateAllDaySelects/refreshDayOptions error', e); }
+
       if (window.console && window.console.log) {
-        console.log('[Row] Added new row with', listToUse.length, 'sedes:', 
-          listToUse.map(function(s){ return s.nombre_sede || s.id; }));
+        console.log('[Row] Added new row with', listToUse.length, 'sedes:', listToUse.map(function(s){ return s.nombre_sede || s.id; }));
       }
     });
   })();

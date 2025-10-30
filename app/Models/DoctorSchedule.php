@@ -9,7 +9,7 @@ class DoctorSchedule extends BaseModel
     
     protected $fillable = [
         'doctor_id', 'sede_id', 'fecha', 'hora_inicio', 
-        'hora_fin', 'activo', 'observaciones', 'dia_semana'
+        'hora_fin', 'activo', 'observaciones', 'dia_semana', 'mes'
     ];
 
     

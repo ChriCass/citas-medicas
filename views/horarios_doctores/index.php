@@ -56,6 +56,8 @@
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
                 <button type="submit" class="btn small danger">Eliminar</button>
               </form>
+              
+              <a class="btn small" href="/doctor-schedules/<?= (int)$h->id ?>/edit">Editar</a>
             </td>
           </tr>
         <?php endforeach; ?>

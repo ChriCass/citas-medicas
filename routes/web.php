@@ -37,5 +37,11 @@ $router->post('/doctor-schedules',         [DoctorScheduleController::class, 'st
 $router->post('/doctor-schedules/{id}/delete', [DoctorScheduleController::class, 'destroy'], ['auth']);
 // Ruta para asignación masiva de horarios (UC-09)
 $router->post('/doctor-schedules/assign',  [DoctorScheduleController::class, 'assign'], ['auth']);
+// Editar/actualizar patrón y aplicar al calendario
+$router->get('/doctor-schedules/{id}/edit',   [DoctorScheduleController::class, 'edit'],   ['auth']);
+$router->post('/doctor-schedules/{id}/update', [DoctorScheduleController::class, 'update'], ['auth']);
+$router->post('/doctor-schedules/{id}/apply',  [DoctorScheduleController::class, 'apply'],  ['auth']);
 // Endpoint AJAX: obtener sedes de un doctor
 $router->get('/doctors/{id}/sedes', [DoctorScheduleController::class, 'doctorSedes'], ['auth']);
+// Endpoint AJAX: obtener días de semana ya usados por un doctor (para filtrar selects)
+$router->get('/doctors/{id}/used-days', [DoctorScheduleController::class, 'usedDays'], ['auth']);
