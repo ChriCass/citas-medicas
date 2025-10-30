@@ -8,7 +8,7 @@ class Calendario extends BaseModel
     protected $table = 'calendario';
 
     protected $fillable = [
-        'doctor_id', 'horario_id', 'fecha', 'estado', 'hora_inicio', 'hora_fin', 'tipo', 'motivo', 'auto_generado', 'creado_en'
+        'doctor_id', 'horario_id', 'fecha', 'estado', 'hora_inicio', 'hora_fin', 'motivo', 'auto_generado', 'creado_en'
     ];
 
     public $timestamps = false;
@@ -31,9 +31,8 @@ class Calendario extends BaseModel
         $c->doctor_id = $doctorId;
         $c->horario_id = $horarioId ?: null;
         $c->fecha = $date;
-        $c->estado = 'activo';
-        $c->tipo = 'normal';
-        $c->auto_generado = 1;
+    $c->estado = 'activo';
+    $c->auto_generado = 1;
         $c->creado_en = date('Y-m-d H:i:s');
 
         // Si se pasan horas explícitas, guardarlas; si no, dejar null y el sistema podrá usar horario_id

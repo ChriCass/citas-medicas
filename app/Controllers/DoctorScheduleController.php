@@ -48,12 +48,12 @@ class DoctorScheduleController
 
         $doctorId   = (int)($_POST['doctor_id'] ?? 0);   // id de doctores
         $sedeId     = (int)($_POST['sede_id'] ?? 0);     // id de sedes (nullable)
-        $fecha      = trim((string)($_POST['fecha'] ?? ''));        // Fecha específica
+        $diaSemana  = trim((string)($_POST['dia_semana'] ?? ''));  // Día de la semana específico
         $start      = trim((string)($_POST['start_time'] ?? ''));
         $end        = trim((string)($_POST['end_time'] ?? ''));
 
         // Validaciones simples
-        if ($doctorId<=0 || !$fecha || !$start || !$end) {
+        if ($doctorId<=0 || !$diaSemana || !$start || !$end) {
             return $res->view('horarios_doctores/create', [
                 'title'=>'Nuevo Horario',
                 'error'=>'Completa todos los campos.',
@@ -62,18 +62,19 @@ class DoctorScheduleController
                 'old'=>$_POST
             ]);
         }
-        
-        // Validar formato de fecha
-        if (!DateTime::createFromFormat('Y-m-d', $fecha)) {
+
+        // Validar día de la semana
+        $diasValidos = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+        if (!in_array(strtolower($diaSemana), $diasValidos)) {
             return $res->view('horarios_doctores/create', [
                 'title'=>'Nuevo Horario',
-                'error'=>'Formato de fecha inválido.',
+                'error'=>'Día de la semana inválido.',
                 'doctors'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),
                 'old'=>$_POST
             ]);
         }
-        
+
         if (strtotime($start) >= strtotime($end)) {
             return $res->view('horarios_doctores/create', [
                 'title'=>'Nuevo Horario',
@@ -84,18 +85,18 @@ class DoctorScheduleController
             ]);
         }
 
-        // Evitar traslapes en doctor+sede+fecha
-        if (DoctorSchedule::overlaps($doctorId, $sedeId, $fecha, $start, $end)) {
+        // Evitar traslapes en doctor+sede+dia_semana
+        if (DoctorSchedule::overlaps($doctorId, $sedeId, $diaSemana, $start, $end)) {
             return $res->view('horarios_doctores/create', [
                 'title'=>'Nuevo Horario',
-                'error'=>'Este rango se solapa con otro horario existente para ese doctor/sede/fecha.',
+                'error'=>'Este rango se solapa con otro horario existente para ese doctor/sede/día.',
                 'doctors'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),
                 'old'=>$_POST
             ]);
         }
 
-        DoctorSchedule::create($doctorId, $sedeId, $fecha, $start, $end, 1);
+        DoctorSchedule::create($doctorId, $sedeId, $diaSemana, $start, $end, 1);
         return $res->redirect('/doctor-schedules');
     }
 
@@ -215,66 +216,148 @@ class DoctorScheduleController
         if (!$startDate) return $res->abort(400, 'Mes/año inválidos');
         $endDate = (clone $startDate)->modify('last day of this month');
 
+        // Crear patrones (horarios_medicos) únicamente para los días seleccionados y con horas provistas.
+        $weekdayMapReverse = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
+        // Normalizar lista de días seleccionados (clave en minúsculas)
+        $selectedDays = [];
+        foreach ($days as $d) {
+            $k = mb_strtolower(trim((string)$d));
+            if ($k !== '') $selectedDays[$k] = true;
+        }
+
+        $patternIds = [];
+        $slotsErrors = [];
+        $createdDays = 0; $skippedDuplicates = 0; $slotsCreated = 0;
+    $skippedHolidays = 0;
+
+        // Crear patrones solo cuando el formulario trae horarios para ese día. Usar sede por día si existe.
+        foreach ($selectedDays as $dayKey => $_) {
+            $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
+            $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
+            if ($sVal === '' || $eVal === '') {
+                // No hay horas para este día; no se crea patrón ni se marcará como error.
+                continue;
+            }
+
+            $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
+
+            // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas)
+            if (DoctorSchedule::patternExists($doctorId, $sedeForDay, $dayKey, $sVal, $eVal)) {
+                $patternIds[$dayKey] = DoctorSchedule::findPatternId($doctorId, $sedeForDay, $dayKey);
+                continue;
+            }
+
+            try {
+                $patternIds[$dayKey] = DoctorSchedule::createPattern($doctorId, $sedeForDay ?: null, $dayKey, $sVal, $eVal, 'Creado desde asignación masiva');
+            } catch (\Throwable $e) {
+                return $res->abort(500, 'Error al crear patrón de horario: ' . $e->getMessage());
+            }
+        }
+
+        // Iterar fechas y crear calendario/slots. Si un día seleccionado no tiene patrón (no se completó), simplemente se salta.
         $current = clone $startDate;
-        $createdDays = 0; $skippedDuplicates = 0; $slotsCreated = 0; $slotsErrors = [];
 
-        // Recorrer cada día del mes
-        while ($current <= $endDate) {
-            $weekday = (int)$current->format('N'); // 1 (Mon) - 7 (Sun)
-            if (in_array($weekday, $daysNums, true)) {
-                $fecha = $current->format('Y-m-d');
+        $pdo = Database::pdo();
+        try {
+            $pdo->beginTransaction();
 
-                // Determinar horas para este día: prioridad -> horarios_inicio/fin por día > (ningún patrón global en UI actual)
-                $weekdayMapReverse = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
-                $dayKey = $weekdayMapReverse[$weekday] ?? null;
-                $baseStart = null; $baseEnd = null;
-                if ($dayKey) {
-                    $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
-                    $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
-                    if ($sVal !== '' && $eVal !== '') {
-                        $baseStart = $sVal;
-                        $baseEnd = $eVal;
-                    }
+            while ($current <= $endDate) {
+                $weekday = (int)$current->format('N'); // 1 (Mon) - 7 (Sun)
+                if (!in_array($weekday, $daysNums, true)) {
+                    $current->modify('+1 day');
+                    continue;
                 }
+
+                $fecha = $current->format('Y-m-d');
+                $dayKey = $weekdayMapReverse[$weekday] ?? null;
+
+                if (!$dayKey) { $current->modify('+1 day'); continue; }
+
+                // Si no existe patrón creado/preexistente para este dayKey, saltar (no es obligatorio completar todos los días)
+                if (empty($patternIds[$dayKey])) {
+                    $current->modify('+1 day');
+                    continue;
+                }
+
+                $usedHorarioId = $patternIds[$dayKey];
 
                 // Evitar duplicados: mismo doctor + fecha + horario
-                if (Calendario::existsFor($doctorId, $fecha, $usedHorarioId)) {
-                    $skippedDuplicates++;
-                } else {
-                    $pdo = Database::pdo();
-                    try {
-                        $pdo->beginTransaction();
-                        $calId = Calendario::createEntry($doctorId, $usedHorarioId, $fecha, $baseStart, $baseEnd);
-                        $pdo->commit();
-                        $createdDays++;
+                // Antes de crear, comprobar si la fecha es feriado (global o para la sede del patrón)
+                try {
+                    $pdoCheck = $pdo->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
+                    $pdoCheck->execute([':f' => $fecha]);
+                    $feriados = $pdoCheck->fetchAll();
+                } catch (\Throwable $e) {
+                    $feriados = [];
+                }
 
-                        // Generar slots si se pidió (siempre por defecto)
-                        if ($generateSlots) {
-                            try {
-                                if ($baseStart && $baseEnd) {
-                                    $n = SlotCalendario::createSlots($calId, $usedHorarioId, $baseStart, $baseEnd, 15);
-                                    $slotsCreated += $n;
-                                } else {
-                                    $slotsErrors[] = "No hay horas definidas para el día {$fecha} (horario_id={$usedHorarioId}).";
-                                }
-                            } catch (\Throwable $e) {
-                                $slotsErrors[] = "Error creando slots para {$fecha}: " . $e->getMessage();
-                            }
+                $isFeriado = false;
+                if (!empty($feriados)) {
+                    // Obtener sede del patrón (si existe)
+                    $patternSedeId = $pattern?->sede_id ?? null;
+                    foreach ($feriados as $fer) {
+                        // Considerar feriado activo cuando activo IS NULL o activo == 1
+                        $activo = $fer['activo'];
+                        $activoFlag = ($activo === null) ? true : (bool)$activo;
+                        if (!$activoFlag) continue;
+
+                        // Si feriado.sede_id IS NULL => aplica a todas las sedes (global)
+                        if ($fer['sede_id'] === null || $fer['sede_id'] === '' ) {
+                            $isFeriado = true; break;
                         }
-                    } catch (\Throwable $e) {
-                        if ($pdo->inTransaction()) $pdo->rollBack();
-                        return $res->abort(500, 'Error al crear registros en calendario: ' . $e->getMessage());
+
+                        // Si feriado tiene sede_id y coincide con el patrón -> aplica
+                        if ($patternSedeId !== null && ((int)$fer['sede_id'] === (int)$patternSedeId)) {
+                            $isFeriado = true; break;
+                        }
                     }
                 }
+
+                if ($isFeriado) {
+                    $skippedHolidays++;
+                    $current->modify('+1 day');
+                    continue;
+                }
+
+                if (Calendario::existsFor($doctorId, $fecha, $usedHorarioId)) {
+                    $skippedDuplicates++;
+                    $current->modify('+1 day');
+                    continue;
+                }
+
+                // Obtener horas desde el patrón (guardadas en horarios_medicos)
+                $pattern = DoctorSchedule::find($usedHorarioId);
+                $baseStart = $pattern?->hora_inicio ? date('H:i', strtotime($pattern->hora_inicio)) : null;
+                $baseEnd = $pattern?->hora_fin ? date('H:i', strtotime($pattern->hora_fin)) : null;
+
+                // Crear calendario y slots
+                $calId = Calendario::createEntry($doctorId, $usedHorarioId, $fecha, $baseStart, $baseEnd);
+                $createdDays++;
+
+                if ($generateSlots) {
+                    if ($baseStart && $baseEnd) {
+                        $n = SlotCalendario::createSlots($calId, $usedHorarioId, $baseStart, $baseEnd, 15);
+                        $slotsCreated += $n;
+                    } else {
+                        $slotsErrors[] = "No hay horas definidas para el día {$fecha} (horario_id={$usedHorarioId}).";
+                    }
+                }
+
+                $current->modify('+1 day');
             }
-            $current->modify('+1 day');
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            return $res->abort(500, 'Error al crear registros en calendario/slots: ' . $e->getMessage());
         }
 
         // Preparar mensaje final
         $msg = "Se generaron {$createdDays} día(s).";
-        if ($skippedDuplicates) $msg .= " {$skippedDuplicates} día(s) omitidos por duplicidad.";
+        if ($skippedDuplicates) $msg .= " {$skippedDuplicates} día(s) omitidos por duplicidad o sin patrón definido.";
         if ($generateSlots) $msg .= " {$slotsCreated} slot(s) creados.";
         if (!empty($slotsErrors)) $msg .= ' Algunos errores: ' . implode(' | ', $slotsErrors);
+    if (!empty($skippedHolidays)) $msg .= " {$skippedHolidays} día(s) omitidos por feriado.";
 
         $_SESSION['flash'] = ['success' => $msg];
         return $res->redirect('/doctor-schedules');
@@ -299,21 +382,27 @@ class DoctorScheduleController
      */
     public function doctorSedes(Request $req, Response $res)
     {
-        $user = $_SESSION['user'] ?? null; if (!$user) return $res->abort(403, 'Forbidden');
-        Auth::abortUnless($res, ['superadmin']);
+        // Permitir que cualquier usuario autenticado obtenga las sedes vía AJAX desde la UI.
+        $user = $_SESSION['user'] ?? null;
+        if (!$user) return $res->abort(403, 'Forbidden');
 
         $id = (int)($req->params['id'] ?? 0);
         if ($id <= 0) return $res->json([], 400);
 
-        // Cargar doctor con relación sedes
-        $doctor = Doctor::with('sedes')->where('id', $id)->first();
-        if (!$doctor) return $res->json([], 404);
+        try {
+            // Cargar doctor con relación sedes
+            $doctor = Doctor::with('sedes')->where('id', $id)->first();
+            if (!$doctor) return $res->json([], 404);
 
-        $sedes = [];
-        foreach ($doctor->sedes ?? [] as $s) {
-            $sedes[] = [ 'id' => $s->id, 'nombre_sede' => $s->nombre_sede ];
+            $sedes = [];
+            foreach ($doctor->sedes ?? [] as $s) {
+                $sedes[] = [ 'id' => $s->id, 'nombre_sede' => $s->nombre_sede ];
+            }
+
+            return $res->json($sedes);
+        } catch (\Throwable $e) {
+            error_log('[doctorSedes] Error: ' . $e->getMessage());
+            return $res->json([], 500);
         }
-
-        return $res->json($sedes);
     }
 }

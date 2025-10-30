@@ -1,13 +1,24 @@
 <?php
 declare(strict_types=1);
-use App\Core\{Env,Router,Request,Response,Eloquent};
+use App\Core\{Env,Router,Request,Response,Eloquent,Database};
 session_start(); 
 date_default_timezone_set('America/Lima');
 require __DIR__.'/../vendor/autoload.php';
 Env::load(__DIR__.'/../.env');
 const BASE_PATH = __DIR__.'/..';
 
-// Inicializar Eloquent ORM
+// Inicializar conexiones a base de datos
+$dbConfig = [
+    'driver' => Env::get('DB_CONNECTION', 'mysql'),
+    'host' => Env::get('DB_HOST', '127.0.0.1'),
+    'port' => (int)Env::get('DB_PORT', '3306'),
+    'database' => Env::get('DB_DATABASE', ''),
+    'username' => Env::get('DB_USERNAME', ''),
+    'password' => Env::get('DB_PASSWORD', '')
+];
+
+// Inicializar tanto Eloquent como Database
+Database::init($dbConfig);
 Eloquent::init();
 
 $router = new Router(); 

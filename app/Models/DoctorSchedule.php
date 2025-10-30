@@ -9,8 +9,9 @@ class DoctorSchedule extends BaseModel
     
     protected $fillable = [
         'doctor_id', 'sede_id', 'fecha', 'hora_inicio', 
-        'hora_fin', 'activo', 'observaciones'
+        'hora_fin', 'activo', 'observaciones', 'dia_semana'
     ];
+
     
     protected $casts = [
         'hora_inicio' => 'datetime:H:i:s',
@@ -86,6 +87,63 @@ class DoctorSchedule extends BaseModel
         $schedule->save();
         
         return $schedule->id;
+    }
+
+    /**
+     * Crear un patrón semanal en la tabla `horarios_medicos` (dia_semana en texto, p.e. 'lunes').
+     * Devuelve el id del registro creado.
+     */
+    public static function createPattern(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, string $observaciones = null): int
+    {
+        $p = new static();
+        $p->doctor_id = $doctorId;
+        $p->sede_id = $locationId ?: null;
+        $p->dia_semana = $diaSemana;
+        $p->hora_inicio = $start;
+        $p->hora_fin = $end;
+        $p->observaciones = $observaciones;
+        $p->activo = true;
+        $p->save();
+        return (int)$p->id;
+    }
+
+    /**
+     * Comprueba si existe un patrón activo igual para evitar duplicados.
+     */
+    public static function patternExists(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end): bool
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('dia_semana', $diaSemana)
+                       ->where('hora_inicio', $start)
+                       ->where('hora_fin', $end)
+                       ->active();
+
+        if ($locationId && (int)$locationId > 0) {
+            $query->where('sede_id', (int)$locationId);
+        } else {
+            $query->whereNull('sede_id');
+        }
+
+        return $query->exists();
+    }
+
+    /**
+     * Buscar un patrón activo para el doctor/sede y día de la semana (devuelve id o null).
+     */
+    public static function findPatternId(int $doctorId, ?int $locationId, string $diaSemana): ?int
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('dia_semana', $diaSemana)
+                       ->active();
+
+        if ($locationId && (int)$locationId > 0) {
+            $query->where('sede_id', (int)$locationId);
+        } else {
+            $query->whereNull('sede_id');
+        }
+
+        $first = $query->orderBy('hora_inicio')->first();
+        return $first ? (int)$first->id : null;
     }
     
     public static function deleteSchedule(int $id): bool

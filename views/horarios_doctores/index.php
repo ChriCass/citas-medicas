@@ -4,9 +4,9 @@
 <section class="hero">
   <div>
     <h1><?= htmlspecialchars($title ?? 'Horarios Doctores') ?></h1>
-    <p class="mt-2">Administra <strong>patrones semanales</strong> de horarios por <strong>doctor</strong> y <strong>sede</strong>.</p>
+    <p class="mt-2">Administra <strong>horarios semanales</strong> por <strong>doctor</strong> y <strong>sede</strong>.</p>
     <div class="auth-links mt-3">
-      <a href="/doctor-schedules/create" class="btn primary">+ Nuevo patrón</a>
+      <a href="/doctor-schedules/create" class="btn primary">+ Nuevo horario</a>
     </div>
   </div>
 </section>
@@ -14,7 +14,7 @@
 <section class="mt-6">
   <?php if (empty($schedules)): ?>
     <div class="card"><div class="content">
-      <p class="muted">No hay patrones de horario registrados.</p>
+      <p class="muted">No hay horarios registrados.</p>
     </div></div>
   <?php else: ?>
     <div class="table-wrapper">
