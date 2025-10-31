@@ -26,6 +26,7 @@ $timeOptions = [
 <form method="POST" class="form mt-3" action="/doctor-schedules/assign" id="patternForm">
   <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
   <input type="hidden" name="generate_slots" value="1">
+  <div id="clientErrors" class="alert error mt-2" style="display:none;"></div>
 
   <div class="row">
     <label class="label" for="doctor_id">Doctor <span aria-hidden="true">*</span></label>
@@ -72,8 +73,10 @@ $timeOptions = [
           $now = (int)date('n');
           $currentYear = (int)date('Y');
           $nextYear = $currentYear + 1;
+          $usedYear = ($now === 12 && (int)($old['mes'] ?? $now) !== 12) ? $nextYear : $currentYear;
         ?>
-        <small class="hint" style="margin-top:6px;">Año utilizado: <?= ($now === 12 && (int)($old['mes'] ?? $now) !== 12) ? $nextYear : $currentYear ?>. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).</small>
+        <input type="hidden" name="anio" id="anio" value="<?= htmlspecialchars($usedYear) ?>">
+        <small id="anioHint" class="hint" style="margin-top:6px;">Año utilizado: <?= $usedYear ?>. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).</small>
     </div>
   </div>
 
@@ -289,6 +292,8 @@ $timeOptions = [
       var mesSel = document.getElementById('mes');
       var mesVal = mesSel ? mesSel.value : null;
       var monthName = null;
+      var yearSel = document.getElementById('anio');
+      var yearVal = yearSel ? yearSel.value : null;
       if (mesVal) {
         var mi = parseInt(mesVal, 10);
         if (!isNaN(mi) && MONTHS[mi]) monthName = MONTHS[mi];
@@ -299,7 +304,7 @@ $timeOptions = [
       }
 
       try {
-        var url = '/doctors/' + encodeURIComponent(doctorId) + '/' + encodeURIComponent(monthName || '') + '/used-days';
+        var url = '/doctors/' + encodeURIComponent(doctorId) + '/' + encodeURIComponent(monthName || '') + '/' + encodeURIComponent(yearVal || '') + '/used-days';
         var res = await fetch(url, { credentials: 'same-origin' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         var data = await res.json();
@@ -424,6 +429,19 @@ $timeOptions = [
         }
 
         // Recargar días usados para el doctor/mes actual
+        // Actualizar año oculto según la regla: si hoy es diciembre y eliges mes distinto a diciembre -> año siguiente
+        try {
+          var now = new Date();
+          var curMonth = now.getMonth() + 1;
+          var curYear = now.getFullYear();
+          var nextYear = curYear + 1;
+          var chosen = parseInt(this.value, 10);
+          var yearToUse = curYear;
+          if (curMonth === 12 && !isNaN(chosen) && chosen !== 12) yearToUse = nextYear;
+          var yEl = document.getElementById('anio'); if (yEl) yEl.value = String(yearToUse);
+          var hint = document.getElementById('anioHint'); if (hint) hint.textContent = 'Año utilizado: ' + yearToUse + '. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).';
+        } catch (e) {}
+
         loadUsedDays(doctorSelect.value);
       });
     }
@@ -435,6 +453,10 @@ $timeOptions = [
     var form = document.getElementById('patternForm');
     if (!form) return;
     var re = /^([01]\d|2[0-3]):[0-5]\d$/;
+    // Hide client errors when the user changes any input
+    form.addEventListener('input', function(){
+      var ce = document.getElementById('clientErrors'); if (ce) ce.style.display = 'none';
+    });
     form.addEventListener('submit', function(e){
       var rows = Array.prototype.slice.call(form.querySelectorAll('#daysTbody tr'));
       var errors = [];
@@ -461,9 +483,20 @@ $timeOptions = [
         if (!isNaN(tS) && !isNaN(tF) && ((tF - tS) / 60000) < 15) errors.push('Fila ' + (idx+1) + ': duración mínima 15 minutos.');
       });
 
+      var clientErrors = document.getElementById('clientErrors');
       if (errors.length) {
         e.preventDefault();
-        alert(errors.join('\n'));
+        if (clientErrors) {
+          var html = '<ul style="margin:0;padding-left:20px;">' + errors.map(function(s){ return '<li>' + s + '</li>'; }).join('') + '</ul>';
+          clientErrors.innerHTML = html;
+          clientErrors.style.display = 'block';
+          try { clientErrors.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e) {}
+        } else {
+          // fallback
+          alert(errors.join('\n'));
+        }
+      } else {
+        if (clientErrors) clientErrors.style.display = 'none';
       }
     });
   })();

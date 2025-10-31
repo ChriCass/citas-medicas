@@ -9,7 +9,7 @@ class DoctorSchedule extends BaseModel
     
     protected $fillable = [
         'doctor_id', 'sede_id', 'fecha', 'hora_inicio', 
-        'hora_fin', 'activo', 'observaciones', 'dia_semana', 'mes'
+        'hora_fin', 'activo', 'observaciones', 'dia_semana', 'mes', 'anio'
     ];
 
     
@@ -84,6 +84,13 @@ class DoctorSchedule extends BaseModel
         $schedule->hora_fin = $end;
         $schedule->observaciones = $observaciones;
         $schedule->activo = true;
+        // Guardar año derivado de la fecha (YYYY)
+        try {
+            $y = (int)date('Y', strtotime($date));
+            if ($y > 0) $schedule->anio = $y;
+        } catch (\Throwable $e) {
+            // ignore
+        }
         $schedule->save();
         
         return $schedule->id;
@@ -93,7 +100,7 @@ class DoctorSchedule extends BaseModel
      * Crear un patrón semanal en la tabla `horarios_medicos` (dia_semana en texto, p.e. 'lunes').
      * Devuelve el id del registro creado.
      */
-    public static function createPattern(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, string $observaciones = null): int
+    public static function createPattern(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, string $observaciones = null, ?string $mes = null, ?int $anio = null): int
     {
         $p = new static();
         $p->doctor_id = $doctorId;
@@ -102,6 +109,8 @@ class DoctorSchedule extends BaseModel
         $p->hora_inicio = $start;
         $p->hora_fin = $end;
         $p->observaciones = $observaciones;
+        if ($mes !== null) $p->mes = mb_strtolower(trim((string)$mes));
+        if ($anio !== null && (int)$anio > 0) $p->anio = (int)$anio;
         $p->activo = true;
         $p->save();
         return (int)$p->id;
@@ -110,7 +119,7 @@ class DoctorSchedule extends BaseModel
     /**
      * Comprueba si existe un patrón activo igual para evitar duplicados.
      */
-    public static function patternExists(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end): bool
+    public static function patternExists(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null): bool
     {
         $query = static::where('doctor_id', $doctorId)
                        ->where('dia_semana', $diaSemana)
@@ -124,13 +133,29 @@ class DoctorSchedule extends BaseModel
             $query->whereNull('sede_id');
         }
 
+        // Filtrar por mes: si se proporcionó, comparar con el valor normalizado; si no, buscar patrones globales (mes NULL/empty)
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where('mes', $m);
+            // Si se provee año, preferir patrones sin año (globales) o con el mismo año
+            if ($anio !== null && (int)$anio > 0) {
+                $query->where(function($q) use ($anio) {
+                    $q->whereNull('anio')->orWhere('anio', (int)$anio);
+                });
+            }
+        } else {
+            $query->where(function($q){
+                $q->whereNull('mes')->orWhere('mes', '');
+            });
+        }
+
         return $query->exists();
     }
 
     /**
      * Buscar un patrón activo para el doctor/sede y día de la semana (devuelve id o null).
      */
-    public static function findPatternId(int $doctorId, ?int $locationId, string $diaSemana): ?int
+    public static function findPatternId(int $doctorId, ?int $locationId, string $diaSemana, ?string $mes = null, ?int $anio = null): ?int
     {
         $query = static::where('doctor_id', $doctorId)
                        ->where('dia_semana', $diaSemana)
@@ -140,6 +165,20 @@ class DoctorSchedule extends BaseModel
             $query->where('sede_id', (int)$locationId);
         } else {
             $query->whereNull('sede_id');
+        }
+        // Filtrar por mes similar a patternExists
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where('mes', $m);
+            if ($anio !== null && (int)$anio > 0) {
+                $query->where(function($q) use ($anio) {
+                    $q->whereNull('anio')->orWhere('anio', (int)$anio);
+                });
+            }
+        } else {
+            $query->where(function($q){
+                $q->whereNull('mes')->orWhere('mes', '');
+            });
         }
 
         $first = $query->orderBy('hora_inicio')->first();

@@ -271,14 +271,16 @@ class DoctorScheduleController
 
             $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
 
-            // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas)
-            if (DoctorSchedule::patternExists($doctorId, $sedeForDay, $dayKey, $sVal, $eVal)) {
-                $existingId = DoctorSchedule::findPatternId($doctorId, $sedeForDay, $dayKey);
+            // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas/mes)
+            $targetMonthName = strtolower($months[$mes] ?? '');
+            if (DoctorSchedule::patternExists($doctorId, $sedeForDay, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
+                $existingId = DoctorSchedule::findPatternId($doctorId, $sedeForDay, $dayKey, $targetMonthName, $anio);
                 // actualizar mes en el patrón existente si es diferente
                 if ($existingId) {
                     $existing = DoctorSchedule::find($existingId);
                     if ($existing && (empty($existing->mes) || $existing->mes !== strtolower($months[$mes] ?? ''))) {
                         $existing->mes = strtolower($months[$mes] ?? '');
+                        $existing->anio = $anio;
                         $existing->save();
                     }
                 }
@@ -287,12 +289,16 @@ class DoctorScheduleController
             }
 
             try {
-                $newId = DoctorSchedule::createPattern($doctorId, $sedeForDay ?: null, $dayKey, $sVal, $eVal, 'Creado desde asignación masiva');
-                // guardar el mes en el registro (nombre en minúsculas, p.e. 'enero')
+                $newId = DoctorSchedule::createPattern($doctorId, $sedeForDay ?: null, $dayKey, $sVal, $eVal, 'Creado desde asignación masiva', ($months[$mes] ?? null), $anio);
+                // guardar el mes y año en el registro (si por alguna razón createPattern no lo setea)
                 $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
                 if ($newId) {
                     $p = DoctorSchedule::find($newId);
-                    if ($p) { $p->mes = $months[$mes] ?? null; $p->save(); }
+                    if ($p) {
+                        $p->mes = $months[$mes] ?? null;
+                        $p->anio = $anio;
+                        $p->save();
+                    }
                 }
                 $patternIds[$dayKey] = $newId;
             } catch (\Throwable $e) {
@@ -745,6 +751,11 @@ class DoctorScheduleController
         try {
             // Determinar mes pasado en la ruta: puede ser nombre en español ('octubre') o número (1..12)
             $monthParam = $req->params['month'] ?? null;
+            $yearParam = $req->params['year'] ?? null;
+            $yearInt = null;
+            if ($yearParam !== null && is_numeric($yearParam)) {
+                $yearInt = (int)$yearParam;
+            }
             $monthName = null;
             $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
             if ($monthParam !== null) {
@@ -770,8 +781,16 @@ class DoctorScheduleController
                         ->where('activo', true);
 
             if ($monthName !== null) {
-                $baseQuery = $baseQuery->where(function($q) use ($monthName) {
-                    $q->whereNull('mes')->orWhere('mes', '')->orWhere('mes', $monthName);
+                $baseQuery = $baseQuery->where(function($q) use ($monthName, $yearInt) {
+                    $q->whereNull('mes')->orWhere('mes', '')->orWhere(function($q2) use ($monthName, $yearInt) {
+                        $q2->where('mes', $monthName);
+                        // Si el cliente pasó un año, preferimos patrones con anio NULL (global) o con ese anio
+                        if ($yearInt !== null) {
+                            $q2->where(function($q3) use ($yearInt) {
+                                $q3->whereNull('anio')->orWhere('anio', (int)$yearInt);
+                            });
+                        }
+                    });
                 });
             }
 
