@@ -679,11 +679,27 @@ class DoctorScheduleController
             return $res->redirect('/doctor-schedules');
         }
 
+        // Additionally load all patterns (horarios) for the same doctor and sede so the view can show them
+        $doctorId = (int)($pattern->doctor_id ?? 0);
+        $sedeId = $pattern->sede_id ?? null;
+        $query = DoctorSchedule::where('doctor_id', $doctorId);
+        if ($sedeId !== null) {
+            $query->where(function($q) use ($sedeId) {
+                $q->where('sede_id', $sedeId)->orWhereNull('sede_id');
+            });
+        } else {
+            $query->whereNull('sede_id');
+        }
+        // Only patterns (dia_semana) — no concrete fechas here
+        $query->whereNotNull('dia_semana')->orderBy('dia_semana')->orderBy('hora_inicio');
+        $horarios = $query->get();
+
         return $res->view('horarios_doctores/edit', [
             'title' => 'Editar patrón',
             'pattern' => $pattern,
             'doctors' => Doctor::getAll(),
             'sedes' => Sede::getAll(),
+            'horarios' => $horarios,
         ]);
     }
 
@@ -704,6 +720,8 @@ class DoctorScheduleController
 
         $doctorId = (int)($_POST['doctor_id'] ?? 0);
         $sedeId = (int)($_POST['sede_id'] ?? 0) ?: null;
+    $postedMes = isset($_POST['mes']) ? (int)$_POST['mes'] : null;
+    $postedAnio = isset($_POST['anio']) ? (int)$_POST['anio'] : null;
         $diaSemana = mb_strtolower(trim((string)($_POST['dia_semana'] ?? '')));
         $horaInicio = trim((string)($_POST['hora_inicio'] ?? ''));
         $horaFin = trim((string)($_POST['hora_fin'] ?? ''));
@@ -758,8 +776,19 @@ class DoctorScheduleController
 
         // Validar solapamiento usando la nueva lógica
         $pattern = DoctorSchedule::find($id);
-        $mes = $pattern?->mes ?? null;
-        $anio = $pattern?->anio ?? null;
+        // Determine mes/anio for overlap checks: prefer posted values, fallback to existing pattern
+        $monthsMap = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+        $mes = null; $anio = null;
+        if ($postedMes && isset($monthsMap[$postedMes])) {
+            $mes = mb_strtolower($monthsMap[$postedMes]);
+        } elseif ($pattern?->mes) {
+            $mes = $pattern->mes;
+        }
+        if ($postedAnio && $postedAnio >= 1970) {
+            $anio = (int)$postedAnio;
+        } elseif ($pattern?->anio) {
+            $anio = (int)$pattern->anio;
+        }
         
         if (DoctorSchedule::patternsOverlap($doctorId, $sedeId, $diaSemana, $horaInicio, $horaFin, $mes, $anio, $id)) {
             return $res->view('horarios_doctores/edit', [
@@ -772,33 +801,105 @@ class DoctorScheduleController
             ]);
         }
 
+        // If the form submitted bulk horarios (multiple rows) handle them
         $pdo = Database::pdo();
-        try {
-            $pdo->beginTransaction();
+        $postedHorarios = $_POST['horarios'] ?? null;
+        if (is_array($postedHorarios) && count($postedHorarios) > 0) {
+            try {
+                $pdo->beginTransaction();
+                $mainPattern = DoctorSchedule::find($id);
+                if (!$mainPattern) throw new \RuntimeException('Patrón no encontrado');
 
-            $pattern = DoctorSchedule::find($id);
-            if (!$pattern) throw new \RuntimeException('Patrón no encontrado');
+                // Iterate posted horarios: expected structure horarios[<id>][field]
+                $timeRe = '/^([01]\d|2[0-3]):[0-5]\d$/';
+                $diasValidos = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo','miercoles','sabado'];
+                foreach ($postedHorarios as $hid => $vals) {
+                    $hid = (int)$hid;
+                    if ($hid <= 0) continue;
+                    $sch = DoctorSchedule::find($hid);
+                    if (!$sch) continue;
+                    // Only allow editing schedules belonging to the same doctor as the main pattern
+                    if ((int)$sch->doctor_id !== (int)$mainPattern->doctor_id) continue;
 
-            $pattern->doctor_id = $doctorId;
-            $pattern->sede_id = $sedeId ?: null;
-            $pattern->dia_semana = $diaSemana;
-            $pattern->hora_inicio = $horaInicio;
-            $pattern->hora_fin = $horaFin;
-            $pattern->observaciones = $observaciones;
-            $pattern->activo = (bool)$activo;
-            $pattern->save();
+                    $dSemana = mb_strtolower(trim((string)($vals['dia_semana'] ?? '')));
+                    $hInicio = trim((string)($vals['hora_inicio'] ?? ''));
+                    $hFin = trim((string)($vals['hora_fin'] ?? ''));
+                    $sedeVal = isset($vals['sede_id']) && (string)$vals['sede_id'] !== '' ? (int)$vals['sede_id'] : null;
+                    $obsVal = trim((string)($vals['observaciones'] ?? ''));
+                    $activoVal = isset($vals['activo']) && (int)$vals['activo'] === 1 ? 1 : 0;
 
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'Error al guardar: ' . $e->getMessage(),
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
+                    if ($dSemana === '' || $hInicio === '' || $hFin === '') {
+                        throw new \RuntimeException('Campos obligatorios faltantes en uno de los horarios.');
+                    }
+                    if (!in_array($dSemana, $diasValidos, true)) {
+                        throw new \RuntimeException('Día de la semana inválido en uno de los horarios.');
+                    }
+                    if (!preg_match($timeRe, $hInicio) || !preg_match($timeRe, $hFin)) {
+                        throw new \RuntimeException('Formato de hora inválido en uno de los horarios.');
+                    }
+                    if (strtotime($hInicio) >= strtotime($hFin) || ((strtotime($hFin)-strtotime($hInicio))/60) < 15) {
+                        throw new \RuntimeException('Uno de los horarios tiene hora inicio mayor o igual a hora fin o duración < 15 min.');
+                    }
+
+                    // Check overlaps (exclude current schedule id)
+                    if (DoctorSchedule::patternsOverlap((int)$sch->doctor_id, $sedeVal, $dSemana, $hInicio, $hFin, $sch?->mes ?? null, $sch?->anio ?? null, $hid)) {
+                        throw new \RuntimeException('Un horario se solapa con otro existente para el mismo doctor.');
+                    }
+
+                    // Persist changes
+                    $sch->dia_semana = $dSemana;
+                    $sch->hora_inicio = $hInicio;
+                    $sch->hora_fin = $hFin;
+                    $sch->sede_id = $sedeVal ?: null;
+                    $sch->observaciones = $obsVal;
+                    $sch->activo = (bool)$activoVal;
+                    $sch->save();
+                }
+
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>'Error al guardar: ' . $e->getMessage(),
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'horarios'=>DoctorSchedule::where('doctor_id', (int)($pattern->doctor_id ?? 0))->get(),
+                    'old'=>$_POST
+                ]);
+            }
+        } else {
+            try {
+                $pdo->beginTransaction();
+
+                $pattern = DoctorSchedule::find($id);
+                if (!$pattern) throw new \RuntimeException('Patrón no encontrado');
+
+                $pattern->doctor_id = $doctorId;
+                $pattern->sede_id = $sedeId ?: null;
+                $pattern->dia_semana = $diaSemana;
+                $pattern->hora_inicio = $horaInicio;
+                $pattern->hora_fin = $horaFin;
+                $pattern->observaciones = $observaciones;
+                $pattern->activo = (bool)$activo;
+                // Save mes/anio if provided
+                if (isset($mes)) $pattern->mes = $mes;
+                if (isset($anio)) $pattern->anio = $anio;
+                $pattern->save();
+
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>'Error al guardar: ' . $e->getMessage(),
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
         }
 
         $_SESSION['flash'] = ['success' => 'Patrón actualizado'];

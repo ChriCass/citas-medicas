@@ -174,10 +174,42 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
         $doc = $r['doctor'] ?? null;
         $sede = $r['sede'] ?? null;
 
+        // Determine a representative pattern id (horarios_medicos.id) for this row when possible
+        $patternId = null;
+        // If we have grouped patterns in 'items', pick the first pattern id found
+        if (!empty($r['items'])) {
+          foreach ($r['items'] as $dayItems) {
+            if (!empty($dayItems) && is_array($dayItems)) {
+              $first = $dayItems[0];
+              $patternId = $first->id ?? null;
+              break;
+            }
+          }
+        }
+        // If not found, try to extract from concrete calendar entries (dates -> entry->horario)
+        if ($patternId === null && !empty($r['dates'])) {
+          foreach ($r['dates'] as $dateArr) {
+            if (!empty($dateArr) && is_array($dateArr)) {
+              $entry = $dateArr[0];
+              $patternId = $entry->horario->id ?? $entry->horario_id ?? null;
+              break;
+            }
+          }
+        }
+
+        // Build URLs: if we have a pattern id, link to edit/delete that pattern; otherwise, link to create (prefill doctor if available)
+        $editUrl = $patternId ? ('/doctor-schedules/' . (int)$patternId . '/edit') : ('/doctor-schedules/create' . (($doc?->id ?? 0) ? ('?doctor_id=' . (int)$doc->id) : ''));
         $acciones = '<div style="display:flex;gap:4px;justify-content:center;">'
-          . '<a href="/doctor-schedules/edit/' . ($doc?->id ?? '') . '" style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Editar">✎</a>'
-          . '<button onclick="if(confirm(\'¿Eliminar este horario?\')) window.location.href=\'/doctor-schedules/delete/' . ($doc?->id ?? '') . '\'" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
-          . '</div>';
+          . '<a href="' . $editUrl . '" style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Editar">✎</a>';
+
+        if ($patternId) {
+          $acciones .= '<form method="POST" action="/doctor-schedules/' . (int)$patternId . '/delete" style="display:inline-block;margin:0;padding:0;">'
+            . '<input type="hidden" name="_csrf" value="' . htmlspecialchars(\App\Core\Csrf::token()) . '">'
+            . '<button type="submit" onclick="return confirm(\'¿Eliminar este horario?\')" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
+            . '</form>';
+        }
+
+        $acciones .= '</div>';
 
         $doctorHtml = '<strong>' . htmlspecialchars($doc?->user?->nombre ?? '') . ' ' . htmlspecialchars($doc?->user?->apellido ?? '') . '</strong>'
           . '<div class="muted" style="font-size:12px;">' . htmlspecialchars($doc?->user?->email ?? '') . '</div>';
