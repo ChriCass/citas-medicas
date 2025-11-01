@@ -1009,7 +1009,10 @@ class DoctorScheduleController
                     $sch->hora_fin = $hFin;
                     $sch->sede_id = $sedeVal ?: null;
                     $sch->observaciones = $obsVal;
-                    $sch->activo = (bool)$activoVal;
+                    // Only update 'activo' if the field was present in the submitted data.
+                    if (array_key_exists('activo', $vals)) {
+                        $sch->activo = (bool)$activoVal;
+                    }
                     $sch->save();
                 }
 

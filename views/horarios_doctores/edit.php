@@ -81,7 +81,6 @@ $timeOptions = [
             <th style="text-align:left;padding:8px;border-bottom:1px solid #eaeaea;">Hora inicio (24h)</th>
             <th style="text-align:left;padding:8px;border-bottom:1px solid #eaeaea;">Hora fin (24h)</th>
             <th style="text-align:left;padding:8px;border-bottom:1px solid #eaeaea;">Observaciones</th>
-            <th style="text-align:center;padding:8px;border-bottom:1px solid #eaeaea;">Activo</th>
           </tr>
         </thead>
         <tbody>
@@ -126,13 +125,11 @@ $timeOptions = [
                 <td style="padding:8px;vertical-align:middle;">
                   <input type="text" name="horarios[<?= (int)$h->id ?>][observaciones]" value="<?= htmlspecialchars($h->observaciones ?? '') ?>" class="input">
                 </td>
-                <td style="padding:8px;vertical-align:middle;text-align:center;">
-                  <input type="checkbox" name="horarios[<?= (int)$h->id ?>][activo]" value="1" <?= ($h->activo ? 'checked' : '') ?>>
-                </td>
+                
               </tr>
             <?php endforeach; ?>
           <?php else: ?>
-            <tr><td colspan="6" style="padding:8px;">No hay patrones asociados para este doctor/sede.</td></tr>
+            <tr><td colspan="5" style="padding:8px;">No hay patrones asociados para este doctor/sede.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
