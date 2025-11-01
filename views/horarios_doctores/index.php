@@ -86,8 +86,12 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
     <label class="label" for="month">Seleccionar un Período</label>
     <select name="month" id="month" class="input" style="width:160px;">
       <option value="" <?= !isset($_GET['month']) ? 'selected' : '' ?>>--</option>
-      <?php for ($m = 1; $m <= 12; $m++): $mName = strftime('%B', strtotime("2000-{$m}-01")); ?>
-        <option value="<?= $m ?>" <?= (isset($_GET['month']) && $m === $selMonth) ? 'selected' : '' ?>><?= ucfirst($mName) ?> <?= $selYear ?></option>
+      <?php
+        // Nombres de meses en español (evita depender de la configuración de locale)
+        $monthNames = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+        for ($m = 1; $m <= 12; $m++):
+      ?>
+        <option value="<?= $m ?>" <?= (isset($_GET['month']) && $m === $selMonth) ? 'selected' : '' ?>><?= ucfirst($monthNames[$m]) ?></option>
       <?php endfor; ?>
     </select>
     <select name="year" id="year" class="input" style="width:110px;">
