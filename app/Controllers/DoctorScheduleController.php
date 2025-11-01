@@ -343,9 +343,15 @@ class DoctorScheduleController
         }
 
         if ($availableDates === 0) {
-            // No crear patrones ni calendario; informar al usuario
-            $_SESSION['flash'] = ['warning' => 'No hay fechas disponibles para el mes seleccionado. Ninguna fecha será creada.'];
-            return $res->redirect('/doctor-schedules');
+            // No crear patrones ni calendario; mostrar mensaje en la vista de creación y preservar los datos del formulario
+            return $res->view('horarios_doctores/create', [
+                'title' => 'Asignar horarios de atención',
+                'error' => 'No hay fechas disponibles para el mes seleccionado. Ninguna fecha será creada.',
+                'doctors' => Doctor::getAll(),
+                'sedes' => Sede::getAll(),
+                'horarios' => DoctorSchedule::listAll(),
+                'old' => $_POST
+            ]);
         }
 
         // Continuar: habrá al menos una fecha disponible para crear calendario
@@ -517,13 +523,8 @@ class DoctorScheduleController
             return $res->abort(500, 'Error al crear registros en calendario/slots: ' . $e->getMessage());
         }
 
-        // Preparar mensaje final
-        $msg = "Se generaron {$createdDays} día(s).";
-        if ($skippedDuplicates) $msg .= " {$skippedDuplicates} día(s) omitidos por duplicidad o sin patrón definido.";
-        if ($generateSlots) $msg .= " {$slotsCreated} slot(s) creados.";
-        if (!empty($slotsErrors)) $msg .= ' Algunos errores: ' . implode(' | ', $slotsErrors);
-    if (!empty($skippedHolidays)) $msg .= " {$skippedHolidays} día(s) omitidos por feriado.";
-
+        // Preparar mensaje final: simplificar a una notificación concisa
+        $msg = 'Horario creado';
         $_SESSION['flash'] = ['success' => $msg];
         return $res->redirect('/doctor-schedules');
     }
