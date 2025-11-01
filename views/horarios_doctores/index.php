@@ -96,9 +96,9 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
   <?php if (empty($rows)): ?>
     <div class="card"><div class="content"><p class="muted">No hay horarios registrados para el período seleccionado.</p></div></div>
   <?php else: ?>
-    <div style="position: relative; width: 100%; height: 500px; border: 1px solid #ddd; background: #fff; overflow: hidden;">
-      <div style="width: 100%; height: 100%; overflow-x: auto; overflow-y: auto;">
-        <table class="table" style="border-collapse: collapse; border-spacing: 0; width: max-content; min-width: 100%;">
+    <div style="position: relative; width: 100%; border: 1px solid #ddd; background: #fff;">
+      <div style="width: 100%; overflow-x: auto; overflow-y: visible; scrollbar-gutter: stable;">
+        <table class="table" style="border-collapse: collapse; border-spacing: 0; width: max-content;">
           <thead>
             <tr>
               <th style="position: sticky; top: 0; left: 0; background: #f8f9fa; z-index: 3; width: 110px; text-align: center; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Acciones</th>
@@ -110,7 +110,7 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
                 $w = (int)date('N', strtotime($dateStr));
                 $label = $short . ' ' . ucfirst(mb_substr($weekdayMap[$w],0,3,'UTF-8'));
             ?>
-              <th style="position: sticky; top: 0; background: #f8f9fa; z-index: 2; padding: 8px; text-align: center; min-width: 150px; border: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;"><?= $label ?></th>
+              <th style="padding: 8px; text-align: center; min-width: 150px; background: #f8f9fa; border: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;"><?= $label ?></th>
             <?php endfor; ?>
           </tr>
         </thead>
