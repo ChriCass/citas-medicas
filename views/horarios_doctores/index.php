@@ -9,46 +9,63 @@ $selYear = isset($selYear) ? (int)$selYear : (isset($_GET['year']) ? (int)$_GET[
 if ($selMonth < 1 || $selMonth > 12) $selMonth = (int)date('n');
 if ($selYear < 1970) $selYear = (int)date('Y');
 
-// Generar días del mes
-$daysInMonth = (int)date('t', strtotime("{$selYear}-{$selMonth}-01"));
+// Detectar si se aplicaron filtros en la querystring
+$hasFilter = isset($_GET['month']) || isset($_GET['year']) || isset($_GET['week']) || isset($_GET['doctor_id']) || isset($_GET['sede_id']);
 
-// Construir filas a partir de las entradas concretas en la tabla `calendario` si están disponibles.
+// Generar días del mes SOLO si hay filtro (evitar valores por defecto automáticos)
+if (isset($_GET['week'])) {
+  // Si filtra por semana, mostramos 7 días
+  $daysInMonth = 7;
+} elseif (isset($_GET['month']) && isset($_GET['year'])) {
+  $daysInMonth = (int)date('t', strtotime("{$selYear}-{$selMonth}-01"));
+} else {
+  $daysInMonth = 0;
+}
+// Detectar si hay filtros aplicados (evitar mostrar registros automáticamente)
+$hasFilter = isset($_GET['month']) || isset($_GET['year']) || isset($_GET['week']) || isset($_GET['doctor_id']) || isset($_GET['sede_id']);
+
+// Construir filas a partir de las entradas concretas en la tabla `calendario` si hay filtros.
 $rows = [];
-if (!empty($calendars)) {
-  foreach ($calendars as $c) {
-    $docId = $c->doctor_id ?? 0;
-    // Determinar sede: se puede derivar desde el horario asociado cuando exista
-    $sedeId = $c->horario?->sede_id ?? 0;
-    $key = $docId . '_' . ($sedeId === null ? '0' : $sedeId);
-    if (!isset($rows[$key])) {
-      $rows[$key] = [
-        'doctor' => $c->doctor ?? ($c->horario?->doctor ?? null),
-        'sede' => ($c->horario?->sede) ?? null,
-        // dates -> fecha (Y-m-d) => array of calendario entries
-        'dates' => []
-      ];
+if ($hasFilter) {
+  if (!empty($calendars)) {
+    foreach ($calendars as $c) {
+      $docId = $c->doctor_id ?? 0;
+      // Determinar sede: se puede derivar desde el horario asociado cuando exista
+      $sedeId = $c->horario?->sede_id ?? 0;
+      $key = $docId . '_' . ($sedeId === null ? '0' : $sedeId);
+      if (!isset($rows[$key])) {
+        $rows[$key] = [
+          'doctor' => $c->doctor ?? ($c->horario?->doctor ?? null),
+          'sede' => ($c->horario?->sede) ?? null,
+          // dates -> fecha (Y-m-d) => array of calendario entries
+          'dates' => []
+        ];
+      }
+      $fecha = (string)($c->fecha ?? '');
+      if (!isset($rows[$key]['dates'][$fecha])) $rows[$key]['dates'][$fecha] = [];
+      $rows[$key]['dates'][$fecha][] = $c;
     }
-    $fecha = (string)($c->fecha ?? '');
-    if (!isset($rows[$key]['dates'][$fecha])) $rows[$key]['dates'][$fecha] = [];
-    $rows[$key]['dates'][$fecha][] = $c;
+  } else {
+    // Fallback: construir filas desde patrones (schedules) agrupando por doctor/sede
+    foreach ($schedules as $s) {
+      $docId = $s->doctor_id ?? 0;
+      $sedeId = $s->sede_id ?? 0;
+      $key = $docId . '_' . ($sedeId === null ? '0' : $sedeId);
+      if (!isset($rows[$key])) {
+        $rows[$key] = [
+          'doctor' => $s->doctor ?? null,
+          'sede' => $s->sede ?? null,
+          'items' => []
+        ];
+      }
+      $dayKey = mb_strtolower(trim((string)$s->dia_semana));
+      if (!isset($rows[$key]['items'][$dayKey])) $rows[$key]['items'][$dayKey] = [];
+      $rows[$key]['items'][$dayKey][] = $s;
+    }
   }
 } else {
-  // Fallback: construir filas desde patrones (schedules) agrupando por doctor/sede
-  foreach ($schedules as $s) {
-    $docId = $s->doctor_id ?? 0;
-    $sedeId = $s->sede_id ?? 0;
-    $key = $docId . '_' . ($sedeId === null ? '0' : $sedeId);
-    if (!isset($rows[$key])) {
-      $rows[$key] = [
-        'doctor' => $s->doctor ?? null,
-        'sede' => $s->sede ?? null,
-        'items' => []
-      ];
-    }
-    $dayKey = mb_strtolower(trim((string)$s->dia_semana));
-    if (!isset($rows[$key]['items'][$dayKey])) $rows[$key]['items'][$dayKey] = [];
-    $rows[$key]['items'][$dayKey][] = $s;
-  }
+  // Sin filtros: no construir filas automáticamente
+  $rows = [];
 }
 
 // Mapa weekday number -> clave en español usada en los patrones
@@ -68,18 +85,36 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
   <form method="GET" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
     <label class="label" for="month">Seleccionar un Período</label>
     <select name="month" id="month" class="input" style="width:160px;">
+      <option value="" <?= !isset($_GET['month']) ? 'selected' : '' ?>>--</option>
       <?php for ($m = 1; $m <= 12; $m++): $mName = strftime('%B', strtotime("2000-{$m}-01")); ?>
-        <option value="<?= $m ?>" <?= $m === $selMonth ? 'selected' : '' ?>><?= ucfirst($mName) ?> <?= $selYear ?></option>
+        <option value="<?= $m ?>" <?= (isset($_GET['month']) && $m === $selMonth) ? 'selected' : '' ?>><?= ucfirst($mName) ?> <?= $selYear ?></option>
       <?php endfor; ?>
     </select>
     <select name="year" id="year" class="input" style="width:110px;">
+      <option value="" <?= !isset($_GET['year']) ? 'selected' : '' ?>>--</option>
       <?php for ($y = $selYear - 1; $y <= $selYear + 1; $y++): ?>
-        <option value="<?= $y ?>" <?= $y === $selYear ? 'selected' : '' ?>><?= $y ?></option>
+        <option value="<?= $y ?>" <?= (isset($_GET['year']) && $y === $selYear) ? 'selected' : '' ?>><?= $y ?></option>
       <?php endfor; ?>
     </select>
 
     <button class="btn" type="submit">Filtrar</button>
   </form>
+  <script>
+    // Antes de enviar el formulario, quitar name de selects/inputs vacíos para que no se envíen como GET
+    (function(){
+      var form = document.querySelector('section.mt-4 form');
+      if (!form) return;
+      form.addEventListener('submit', function(){
+        Array.prototype.forEach.call(form.querySelectorAll('select,input'), function(el){
+          if (!el.name) return;
+          // Para selects y campos de texto, si el valor es vacío, remover el atributo name
+          if ((el.tagName === 'SELECT' || el.type === 'text' || el.type === 'hidden') && (el.value === null || el.value === '')) {
+            el.removeAttribute('name');
+          }
+        });
+      });
+    })();
+  </script>
   <div>
     <input id="filterInput" class="input" placeholder="Filtrar Registro en la Tabla" style="width:20%" />
   </div>
@@ -87,99 +122,145 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
   <div style="margin:6px 0 12px;display:flex;justify-content:space-between;align-items:center;">
     <div><small class="muted">Items por página:</small>
       <select id="perPage" class="input" style="width:80px;display:inline-block;">
-        <option>10</option><option>25</option><option>50</option>
+        <option value="" <?= !isset($_GET['perPage']) ? 'selected' : '' ?>>--</option>
+        <option value="10">10</option><option value="25">25</option><option value="50">50</option>
       </select>
     </div>
     <div><small class="muted">Resultados: <?= count($rows) ?> fila(s)</small></div>
   </div>
 
-  <?php if (empty($rows)): ?>
+  <?php if (!$hasFilter): ?>
+    <div class="card"><div class="content"><p class="muted">Aplica filtros para ver registros.</p></div></div>
+  <?php elseif (empty($rows)): ?>
     <div class="card"><div class="content"><p class="muted">No hay horarios registrados para el período seleccionado.</p></div></div>
   <?php else: ?>
-    <div style="position: relative; width: 100%; border: 1px solid #ddd; background: #fff;">
-      <div style="width: 100%; overflow-x: auto; overflow-y: visible; scrollbar-gutter: stable;">
-        <table class="table" style="border-collapse: collapse; border-spacing: 0; width: max-content;">
-          <thead>
-            <tr>
-              <th style="position: sticky; top: 0; left: 0; background: #f8f9fa; z-index: 3; width: 110px; text-align: center; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Acciones</th>
-              <th style="position: sticky; top: 0; left: 110px; background: #f8f9fa; z-index: 3; width: 200px; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Doctor</th>
-              <th style="position: sticky; top: 0; left: 310px; background: #f8f9fa; z-index: 3; width: 200px; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Sede</th>
-            <?php for ($d = 1; $d <= $daysInMonth; $d++):
-                $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
-                $short = date('d', strtotime($dateStr));
-                $w = (int)date('N', strtotime($dateStr));
-                $label = $short . ' ' . ucfirst(mb_substr($weekdayMap[$w],0,3,'UTF-8'));
-            ?>
-              <th style="padding: 8px; text-align: center; min-width: 150px; background: #f8f9fa; border: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;"><?= $label ?></th>
-            <?php endfor; ?>
-          </tr>
-        </thead>
-        <tbody id="schedulesTbody">
-          <?php foreach ($rows as $key => $r):
-              $doc = $r['doctor']; $sede = $r['sede'];
-              $search = strtolower(($doc?->user?->nombre ?? '') . ' ' . ($doc?->user?->apellido ?? '') . ' ' . ($doc?->user?->email ?? '') . ' ' . ($sede?->nombre_sede ?? ''));
-          ?>
-          <tr data-search="<?= htmlspecialchars($search) ?>">
-            <td style="position: sticky; left: 0; background: #fff; z-index: 2; padding: 8px; text-align: center; width: 110px; border-right: 2px solid #dee2e6;">
-              <div style="display: flex; gap: 4px; justify-content: center;">
-                <a href="/doctor-schedules/edit/<?= $doc?->id ?? '' ?>" 
-                   style="background: #28a745; color: #fff; border-radius: 4px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; text-decoration: none;"
-                   title="Editar">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                    <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" />
-                    <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z" />
-                    <path d="M16 5l3 3" />
-                  </svg>
-                </a>
-                <button onclick="if(confirm('¿Eliminar este horario?')) window.location.href='/doctor-schedules/delete/<?= $doc?->id ?? '' ?>'"
-                        style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;"
-                        title="Eliminar">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                    <path d="M4 7l16 0" />
-                    <path d="M10 11l0 6" />
-                    <path d="M14 11l0 6" />
-                    <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-                    <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
-                  </svg>
-                </button>
-              </div>
-            </td>
-            <td style="position: sticky; left: 110px; background: #fff; z-index: 2; padding: 8px; width: 200px; white-space: nowrap; border-right: 2px solid #dee2e6;"> 
-              <strong><?= htmlspecialchars($doc?->user?->nombre ?? '') ?> <?= htmlspecialchars($doc?->user?->apellido ?? '') ?></strong>
-              <div class="muted" style="font-size: 12px;"><?= htmlspecialchars($doc?->user?->email ?? '') ?></div>
-            </td>
-            <td style="position: sticky; left: 310px; background: #fff; z-index: 2; padding: 8px; width: 200px; white-space: nowrap; border-right: 2px solid #dee2e6;"><?= htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede') ?></td>
-            <?php for ($d = 1; $d <= $daysInMonth; $d++):
-                $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
-                $w = (int)date('N', strtotime($dateStr));
-                $dayKey = $weekdayMap[$w];
-        $cellHtml = '';
-        $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
-        // Si la fila contiene claves 'dates', usamos las entradas de calendario por fecha exacta
-        if (!empty($r['dates'][$dateStr])) {
-          foreach ($r['dates'][$dateStr] as $entry) {
-            $start = $entry->hora_inicio ? date('H:i', strtotime($entry->hora_inicio)) : ($entry->horario?->hora_inicio ? date('H:i', strtotime($entry->horario->hora_inicio)) : '');
-            $end = $entry->hora_fin ? date('H:i', strtotime($entry->hora_fin)) : ($entry->horario?->hora_fin ? date('H:i', strtotime($entry->horario->hora_fin)) : '');
-            $cellHtml .= '<div style="background:#ffe9b3;padding:4px;margin:2px;border-radius:3px;font-size:12px;">' . htmlspecialchars($start) . ' - ' . htmlspecialchars($end) . '</div>';
-          }
-        } elseif (!empty($r['items'][$dayKey])) {
-          // Fallback a patrones semanales cuando no hay entradas concretas
-          foreach ($r['items'][$dayKey] as $it) {
-            $start = $it->hora_inicio ? date('H:i', strtotime($it->hora_inicio)) : '';
-            $end = $it->hora_fin ? date('H:i', strtotime($it->hora_fin)) : '';
-            $cellHtml .= '<div style="background:#ffe9b3;padding:4px;margin:2px;border-radius:3px;font-size:12px;">' . htmlspecialchars($start) . ' - ' . htmlspecialchars($end) . '</div>';
-          }
-        }
-            ?>
-              <td style="vertical-align: top; padding: 8px; min-width: 150px; border: 1px solid #dee2e6;"><?= $cellHtml ? $cellHtml : '&nbsp;' ?></td>
-            <?php endfor; ?>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+    <!-- Tabulator assets (local) -->
+    <link href="/lib/tabulator/tabulator.min.css" rel="stylesheet">
+    <script src="/lib/tabulator/tabulator.min.js"></script>
+
+    <style>
+      /* Visual tuning to resemble the screenshot */
+      /* Make container 50px less than the width of .page (if present). Falls back to parent width minus 50px. */
+      .page .schedulesGridWrapper{ width: calc(100% - 50px); max-width: calc(100% - 50px); overflow-x:auto; overflow-y:visible; box-sizing:border-box; }
+      .schedulesGridWrapper{ width: calc(100% - 50px); max-width: calc(100% - 50px); overflow-x:auto; overflow-y:visible; box-sizing:border-box; }
+      #schedulesGrid{ padding:0; }
+      #schedulesGrid .tabulator-header{ background:#f8f9fa; border-bottom:2px solid #dee2e6; }
+      #schedulesGrid .tabulator-header .tabulator-col{ padding:8px 10px; text-align:center; font-weight:600; color:#333; }
+      #schedulesGrid .tabulator-row .tabulator-cell{ padding:8px; vertical-align:top; }
+      #schedulesGrid .tabulator-table .tabulator-row:nth-child(even) .tabulator-cell{ background:#f2f2f2; }
+      #schedulesGrid .tabulator-table .tabulator-row:nth-child(odd) .tabulator-cell{ background:#fff; }
+      /* frozen col visual separation */
+      #schedulesGrid .tabulator .tabulator-header .tabulator-col.frozen{ background:#f8f9fa; }
+      /* Allow internal table to grow horizontally without expanding the page */
+      #schedulesGrid .tabulator{ display:inline-block; width:auto !important; min-width:100%; box-sizing:border-box; }
+      #schedulesGrid .tabulator .tabulator-table{ min-width: max-content; width:auto !important; }
+    </style>
+
+    <!-- Tabulator-based grid that preserves original headers -->
+    <div class="schedulesGridWrapper" style="overflow-x:auto;overflow-y:visible;box-sizing:border-box;">
+      <div id="schedulesGrid" style="border:1px solid #ddd;background:#fff;"></div>
     </div>
+
+  <?php endif; ?>
+
+  <?php if (!empty($rows)): ?>
+    <?php
+      $rowsForJs = [];
+      foreach ($rows as $key => $r) {
+        $doc = $r['doctor'] ?? null;
+        $sede = $r['sede'] ?? null;
+
+        $acciones = '<div style="display:flex;gap:4px;justify-content:center;">'
+          . '<a href="/doctor-schedules/edit/' . ($doc?->id ?? '') . '" style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Editar">✎</a>'
+          . '<button onclick="if(confirm(\'¿Eliminar este horario?\')) window.location.href=\'/doctor-schedules/delete/' . ($doc?->id ?? '') . '\'" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
+          . '</div>';
+
+        $doctorHtml = '<strong>' . htmlspecialchars($doc?->user?->nombre ?? '') . ' ' . htmlspecialchars($doc?->user?->apellido ?? '') . '</strong>'
+          . '<div class="muted" style="font-size:12px;">' . htmlspecialchars($doc?->user?->email ?? '') . '</div>';
+
+        $sedeHtml = htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede');
+
+        $row = ['acciones' => $acciones, 'doctor' => $doctorHtml, 'sede' => $sedeHtml];
+
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+          $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
+          $w = (int)date('N', strtotime($dateStr));
+          $dayKey = $weekdayMap[$w];
+          $cellHtml = '';
+
+          if (!empty($r['dates'][$dateStr])) {
+            foreach ($r['dates'][$dateStr] as $entry) {
+              $start = $entry->hora_inicio ? date('H:i', strtotime($entry->hora_inicio)) : ($entry->horario?->hora_inicio ? date('H:i', strtotime($entry->horario->hora_inicio)) : '');
+              $end = $entry->hora_fin ? date('H:i', strtotime($entry->hora_fin)) : ($entry->horario?->hora_fin ? date('H:i', strtotime($entry->horario->hora_fin)) : '');
+              $cellHtml .= '<div style="background:#ffe9b3;padding:4px;margin:2px;border-radius:3px;font-size:12px;">' . htmlspecialchars($start) . ' - ' . htmlspecialchars($end) . '</div>';
+            }
+          } elseif (!empty($r['items'][$dayKey])) {
+            foreach ($r['items'][$dayKey] as $it) {
+              $start = $it->hora_inicio ? date('H:i', strtotime($it->hora_inicio)) : '';
+              $end = $it->hora_fin ? date('H:i', strtotime($it->hora_fin)) : '';
+              $cellHtml .= '<div style="background:#ffe9b3;padding:4px;margin:2px;border-radius:3px;font-size:12px;">' . htmlspecialchars($start) . ' - ' . htmlspecialchars($end) . '</div>';
+            }
+          }
+
+          $row['day' . $d] = $cellHtml;
+        }
+
+        $rowsForJs[] = $row;
+      }
+    ?>
+
+    <script>
+      (function(){
+        var schedulesData = <?= json_encode($rowsForJs, JSON_UNESCAPED_UNICODE) ?>;
+
+        var columns = [
+          {title:"Acciones", field:"acciones", frozen:true, hozAlign:"center", width:110, formatter:"html"},
+          {title:"Doctor", field:"doctor", frozen:true, width:200, formatter:"html"},
+          {title:"Sede", field:"sede", frozen:true, width:200, formatter:"html"},
+        ];
+
+        <?php for ($d = 1; $d <= $daysInMonth; $d++):
+            $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
+            $short = date('d', strtotime($dateStr));
+            $w = (int)date('N', strtotime($dateStr));
+            $label = $short . ' ' . ucfirst(mb_substr($weekdayMap[$w],0,3,'UTF-8'));
+        ?>
+          columns.push({title:"<?= $label ?>", field:"day<?= $d ?>", formatter:"html", hozAlign:"center", minWidth:150});
+        <?php endfor; ?>
+
+        var table = new Tabulator("#schedulesGrid", {
+          data: schedulesData,
+          columns: columns,
+          layout: "fitData",
+          autoResize: false,
+          renderHorizontal: "virtual",
+          virtualDom: true,
+          pagination: "local",
+          paginationSize: parseInt(document.getElementById('perPage')?.value || 10, 10),
+          movableColumns: false,
+          resizableColumns: true,
+          placeholder: "No hay horarios para el período seleccionado",
+        });
+
+        var filterInput = document.getElementById('filterInput');
+        if (filterInput) {
+          filterInput.addEventListener('input', function(){
+            var q = (this.value||'').toLowerCase().trim();
+            if (!q) { table.clearFilter(); return; }
+            table.setFilter(function(data){
+              var hay = (data.doctor || '') + ' ' + (data.sede || '') + ' ' + (data.acciones || '');
+              for (var k in data) { if (k.indexOf('day') === 0) hay += ' ' + (data[k] || ''); }
+              return hay.toLowerCase().indexOf(q) !== -1;
+            });
+          });
+        }
+
+        var perPage = document.getElementById('perPage');
+        if (perPage) {
+          perPage.addEventListener('change', function(){ table.setPageSize(parseInt(this.value || 10, 10)); });
+        }
+      })();
+    </script>
   <?php endif; ?>
 </section>
 
@@ -196,5 +277,50 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
         if (!q || s.indexOf(q) !== -1) tr.style.display = ''; else tr.style.display = 'none';
       });
     });
+  })();
+</script>
+
+<script>
+  // Determinar el ancho inicial de la página UNA VEZ y mantenerlo inmutable.
+  (function(){
+    try {
+      var page = document.querySelector('.page');
+      var wrapper = document.querySelector('.schedulesGridWrapper');
+      if (!wrapper) return;
+
+      // Si ya existe PAGE_WIDTH definida, úsala (no recalculamos)
+      if (typeof window.PAGE_WIDTH !== 'undefined' && window.PAGE_WIDTH !== null) {
+        var fixedTarget = Math.max(0, window.PAGE_WIDTH - 50);
+        wrapper.style.width = fixedTarget + 'px';
+        wrapper.style.maxWidth = fixedTarget + 'px';
+      } else {
+        // Medir ahora y definir PAGE_WIDTH de forma no escribible
+        var measured = null;
+        if (page) measured = Math.round(page.getBoundingClientRect().width);
+        else measured = Math.round((wrapper.parentElement || document.body).getBoundingClientRect().width || 0);
+
+        var safeMeasured = Math.max(0, measured);
+        try {
+          Object.defineProperty(window, 'PAGE_WIDTH', {
+            value: safeMeasured,
+            writable: false,
+            configurable: false,
+            enumerable: true
+          });
+        } catch (err) {
+          // Si falla (navegadores antiguos), asignar pero evita modificaciones posteriores por convención
+          if (typeof window.PAGE_WIDTH === 'undefined') window.PAGE_WIDTH = safeMeasured;
+        }
+
+        try { if (page) page.dataset.pageWidth = String(safeMeasured); } catch (e) {}
+
+        var target = Math.max(0, safeMeasured - 50);
+        wrapper.style.width = target + 'px';
+        wrapper.style.maxWidth = target + 'px';
+      }
+    } catch (e) {
+      console && console.error && console.error('Error inicializando ancho fijo para schedulesGridWrapper', e);
+    }
+    // Nota: no añadimos listener de resize para mantener el ancho inicial intacto.
   })();
 </script>
