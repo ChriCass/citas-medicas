@@ -274,6 +274,81 @@ class DoctorScheduleController
             if ($k !== '') $selectedDays[$k] = true;
         }
 
+        // Antes de crear patrones, construir una lista de patrones prospectivos (día -> horas/sede)
+        $prospectivePatterns = [];
+        foreach ($selectedDays as $dayKey => $_) {
+            $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
+            $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
+            if ($sVal === '' || $eVal === '') continue;
+            $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
+            $prospectivePatterns[$dayKey] = ['start' => $sVal, 'end' => $eVal, 'sede' => $sedeForDay];
+        }
+
+        // Si no hay patrones con horas provistas, no hay nada que crear
+        if (empty($prospectivePatterns)) {
+            $_SESSION['flash'] = ['warning' => 'No se proporcionaron horarios con horas válidas para el mes seleccionado.'];
+            return $res->redirect('/doctor-schedules');
+        }
+
+        // Escanear el mes objetivo para comprobar si existe al menos UNA fecha disponible
+        // disponible = fecha dentro del rango, coincide con algún día seleccionado,
+        // no es feriado (global o para la sede) y no existe ya un registro en calendario para el médico en esa fecha.
+        $pdoCheck = Database::pdo();
+        $availableDates = 0;
+        $scanDate = clone $startDate;
+        while ($scanDate <= $endDate) {
+            $weekday = (int)$scanDate->format('N');
+            if (!in_array($weekday, $daysNums, true)) { $scanDate->modify('+1 day'); continue; }
+
+            $fecha = $scanDate->format('Y-m-d');
+
+            // Para cada patrón prospectivo validar si aplica a este weekday
+            foreach ($prospectivePatterns as $pDayKey => $p) {
+                // Mapear clave de día a número (si existe en el map)
+                $mapNum = $map[mb_strtolower(trim((string)$pDayKey))] ?? null;
+                if ($mapNum === null || $mapNum !== $weekday) continue;
+
+                // Comprobar feriados para la fecha
+                $isFeriado = false;
+                try {
+                    $stmt = $pdoCheck->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
+                    $stmt->execute([':f' => $fecha]);
+                    $feriados = $stmt->fetchAll();
+                } catch (\Throwable $e) {
+                    $feriados = [];
+                }
+
+                if (!empty($feriados)) {
+                    foreach ($feriados as $fer) {
+                        $activo = $fer['activo'];
+                        $activoFlag = ($activo === null) ? true : (bool)$activo;
+                        if (!$activoFlag) continue;
+                        // feriado global
+                        if ($fer['sede_id'] === null || $fer['sede_id'] === '') { $isFeriado = true; break; }
+                        // feriado por sede
+                        if ($p['sede'] !== null && $p['sede'] !== '' && ((int)$fer['sede_id'] === (int)$p['sede'])) { $isFeriado = true; break; }
+                    }
+                }
+                if ($isFeriado) continue;
+
+                // Si ya existe cualquier calendario para el doctor en esta fecha, considerar como no disponible
+                if (\App\Models\Calendario::existsFor($doctorId, $fecha, null)) continue;
+
+                // Si llegamos aquí, hay al menos una fecha disponible para crear calendario
+                $availableDates++;
+                break 2; // no necesitamos más, basta con 1 fecha disponible
+            }
+
+            $scanDate->modify('+1 day');
+        }
+
+        if ($availableDates === 0) {
+            // No crear patrones ni calendario; informar al usuario
+            $_SESSION['flash'] = ['warning' => 'No hay fechas disponibles para el mes seleccionado. Ninguna fecha será creada.'];
+            return $res->redirect('/doctor-schedules');
+        }
+
+        // Continuar: habrá al menos una fecha disponible para crear calendario
         $patternIds = [];
         $slotsErrors = [];
         $createdDays = 0; $skippedDuplicates = 0; $slotsCreated = 0;

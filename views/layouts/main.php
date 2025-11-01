@@ -118,6 +118,22 @@
     </header>
 
     <main class="container" role="main">
+      <?php
+        // Mostrar mensajes flash si existen (seteados por controladores)
+        if (!empty($_SESSION['flash']) && is_array($_SESSION['flash'])):
+          foreach ($_SESSION['flash'] as $type => $msg):
+            $cls = 'info';
+            if ($type === 'success') $cls = 'success';
+            elseif ($type === 'warning') $cls = 'warning';
+            elseif ($type === 'error') $cls = 'error';
+      ?>
+        <div class="alert <?= htmlspecialchars($cls) ?>" role="status" style="margin-bottom:12px;"><?= htmlspecialchars((string)$msg) ?></div>
+      <?php
+          endforeach;
+          // Limpiar flash después de mostrar
+          unset($_SESSION['flash']);
+        endif;
+      ?>
       <?= $content ?? '' ?>
     </main>
   </div>
