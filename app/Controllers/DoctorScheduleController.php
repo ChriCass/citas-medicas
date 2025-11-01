@@ -115,7 +115,9 @@ class DoctorScheduleController
             ]);
         }
 
-        DoctorSchedule::create($doctorId, $sedeId, $diaSemana, $start, $end, 1);
+        // Crear un patrón semanal (dia_semana) usando createPattern en lugar de create (que crea entradas con fecha)
+        $createdId = DoctorSchedule::createPattern($doctorId, $sedeId ?: null, strtolower($diaSemana), $start, $end, null, null, null);
+        $_SESSION['flash'] = ['success' => 'Patrón creado'];
         return $res->redirect('/doctor-schedules');
     }
 
@@ -189,20 +191,24 @@ class DoctorScheduleController
             ]);
         }
 
-        // Se reciben horarios por día como horarios_inicio[dayKey] y horarios_fin[dayKey]
+        // Se reciben horarios por fila (índices numéricos 0, 1, 2...) con days[], horarios_inicio[], horarios_fin[], sede_for_day[]
         $horariosInicio = $_POST['horarios_inicio'] ?? [];
         $horariosFin = $_POST['horarios_fin'] ?? [];
+        $sedeForDay = $_POST['sede_for_day'] ?? [];
 
-        // Validación básica de formato 24h HH:MM y duración mínima 15 minutos
+        // Validación básica de formato 24h HH:MM y duración mínima 15 minutos por cada fila
         $timeRe = '/^([01]\d|2[0-3]):[0-5]\d$/';
-        foreach ($horariosInicio as $k => $v) {
-            $s = trim((string)$v);
-            $e = trim((string)($horariosFin[$k] ?? ''));
-            if ($s === '' && $e === '') continue; // ambos vacíos -> se ignora la creación de slots para ese día
+        foreach ($days as $idx => $dayName) {
+            $dayName = trim((string)$dayName);
+            if ($dayName === '') continue; // fila sin día seleccionado, se ignora
+            
+            $s = trim((string)($horariosInicio[$idx] ?? ''));
+            $e = trim((string)($horariosFin[$idx] ?? ''));
+            if ($s === '' && $e === '') continue; // ambos vacíos -> se ignora la creación para esa fila
             if ($s === '' || $e === '') {
                 return $res->view('horarios_doctores/create', [
                     'title' => 'Asignar horarios de atención',
-                    'error' => "Día {$k}: debes proporcionar hora de inicio y hora de fin o dejar ambos vacíos.",
+                    'error' => "Fila " . ($idx + 1) . " (día {$dayName}): debes proporcionar hora de inicio y hora de fin o dejar ambos vacíos.",
                     'doctors' => Doctor::getAll(),
                     'sedes' => Sede::getAll(),
                     'horarios' => DoctorSchedule::listAll(),
@@ -212,7 +218,7 @@ class DoctorScheduleController
             if (!preg_match($timeRe, $s) || !preg_match($timeRe, $e)) {
                 return $res->view('horarios_doctores/create', [
                     'title' => 'Asignar horarios de atención',
-                    'error' => "Día {$k}: formato de hora inválido. Usa HH:MM 24h.",
+                    'error' => "Fila " . ($idx + 1) . " (día {$dayName}): formato de hora inválido. Usa HH:MM 24h.",
                     'doctors' => Doctor::getAll(),
                     'sedes' => Sede::getAll(),
                     'horarios' => DoctorSchedule::listAll(),
@@ -225,7 +231,7 @@ class DoctorScheduleController
             if ($tStart >= $tEnd) {
                 return $res->view('horarios_doctores/create', [
                     'title' => 'Asignar horarios de atención',
-                    'error' => "Día {$k}: la hora de inicio debe ser menor que la hora fin.",
+                    'error' => "Fila " . ($idx + 1) . " (día {$dayName}): la hora de inicio debe ser menor que la hora fin.",
                     'doctors' => Doctor::getAll(),
                     'sedes' => Sede::getAll(),
                     'horarios' => DoctorSchedule::listAll(),
@@ -235,7 +241,7 @@ class DoctorScheduleController
             if ((($tEnd - $tStart) / 60) < 15) {
                 return $res->view('horarios_doctores/create', [
                     'title' => 'Asignar horarios de atención',
-                    'error' => "Día {$k}: la duración mínima debe ser de 15 minutos.",
+                    'error' => "Fila " . ($idx + 1) . " (día {$dayName}): la duración mínima debe ser de 15 minutos.",
                     'doctors' => Doctor::getAll(),
                     'sedes' => Sede::getAll(),
                     'horarios' => DoctorSchedule::listAll(),
@@ -267,21 +273,19 @@ class DoctorScheduleController
 
         // Crear patrones (horarios_medicos) únicamente para los días seleccionados y con horas provistas.
         $weekdayMapReverse = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
-        // Normalizar lista de días seleccionados (clave en minúsculas)
-        $selectedDays = [];
-        foreach ($days as $d) {
-            $k = mb_strtolower(trim((string)$d));
-            if ($k !== '') $selectedDays[$k] = true;
-        }
-
-        // Antes de crear patrones, construir una lista de patrones prospectivos (día -> horas/sede)
+        
+        // Build prospective patterns from rows (indexed 0, 1, 2...) — each row can create one pattern
+        // Group by day name to build a structure for scanning: dayKey => [ [start, end, sede], ... ]
         $prospectivePatterns = [];
-        foreach ($selectedDays as $dayKey => $_) {
-            $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
-            $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
+        foreach ($days as $idx => $dayName) {
+            $dayKey = mb_strtolower(trim((string)$dayName));
+            if ($dayKey === '') continue;
+            $sVal = trim((string)($horariosInicio[$idx] ?? ''));
+            $eVal = trim((string)($horariosFin[$idx] ?? ''));
             if ($sVal === '' || $eVal === '') continue;
-            $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
-            $prospectivePatterns[$dayKey] = ['start' => $sVal, 'end' => $eVal, 'sede' => $sedeForDay];
+            $sede = isset($sedeForDay[$idx]) ? (int)$sedeForDay[$idx] : ($sedeId ?: 0);
+            if (!isset($prospectivePatterns[$dayKey])) $prospectivePatterns[$dayKey] = [];
+            $prospectivePatterns[$dayKey][] = ['start' => $sVal, 'end' => $eVal, 'sede' => $sede];
         }
 
         // Si no hay patrones con horas provistas, no hay nada que crear
@@ -296,6 +300,14 @@ class DoctorScheduleController
         $pdoCheck = Database::pdo();
         $availableDates = 0;
         $scanDate = clone $startDate;
+        
+        // Build list of weekdays from prospective patterns
+        $daysNums = [];
+        foreach (array_keys($prospectivePatterns) as $dayKey) {
+            $num = $map[mb_strtolower(trim((string)$dayKey))] ?? null;
+            if ($num !== null && !in_array($num, $daysNums, true)) $daysNums[] = $num;
+        }
+        
         while ($scanDate <= $endDate) {
             $weekday = (int)$scanDate->format('N');
             if (!in_array($weekday, $daysNums, true)) { $scanDate->modify('+1 day'); continue; }
@@ -303,40 +315,40 @@ class DoctorScheduleController
             $fecha = $scanDate->format('Y-m-d');
 
             // Para cada patrón prospectivo validar si aplica a este weekday
-            foreach ($prospectivePatterns as $pDayKey => $p) {
+            foreach ($prospectivePatterns as $pDayKey => $pList) {
                 // Mapear clave de día a número (si existe en el map)
                 $mapNum = $map[mb_strtolower(trim((string)$pDayKey))] ?? null;
                 if ($mapNum === null || $mapNum !== $weekday) continue;
 
-                // Comprobar feriados para la fecha
-                $isFeriado = false;
-                try {
-                    $stmt = $pdoCheck->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
-                    $stmt->execute([':f' => $fecha]);
-                    $feriados = $stmt->fetchAll();
-                } catch (\Throwable $e) {
-                    $feriados = [];
-                }
-
-                if (!empty($feriados)) {
-                    foreach ($feriados as $fer) {
-                        $activo = $fer['activo'];
-                        $activoFlag = ($activo === null) ? true : (bool)$activo;
-                        if (!$activoFlag) continue;
-                        // feriado global
-                        if ($fer['sede_id'] === null || $fer['sede_id'] === '') { $isFeriado = true; break; }
-                        // feriado por sede
-                        if ($p['sede'] !== null && $p['sede'] !== '' && ((int)$fer['sede_id'] === (int)$p['sede'])) { $isFeriado = true; break; }
+                foreach ($pList as $p) {
+                    // Comprobar feriados para la fecha
+                    $isFeriado = false;
+                    try {
+                        $stmt = $pdoCheck->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
+                        $stmt->execute([':f' => $fecha]);
+                        $feriados = $stmt->fetchAll();
+                    } catch (\Throwable $e) {
+                        $feriados = [];
                     }
+
+                    if (!empty($feriados)) {
+                        foreach ($feriados as $fer) {
+                            $activo = $fer['activo'];
+                            $activoFlag = ($activo === null) ? true : (bool)$activo;
+                            if (!$activoFlag) continue;
+                            // feriado global
+                            if ($fer['sede_id'] === null || $fer['sede_id'] === '') { $isFeriado = true; break; }
+                            // feriado por sede
+                            if ($p['sede'] !== null && $p['sede'] !== '' && ((int)$fer['sede_id'] === (int)$p['sede'])) { $isFeriado = true; break; }
+                        }
+                    }
+                    if ($isFeriado) continue;
+
+                    // Si llegamos aquí, hay al menos una fecha elegible (no es feriado y coincide con día seleccionado)
+                    // No verificamos si ya existe calendario, porque permitimos múltiples horarios por día
+                    $availableDates++;
+                    break 3; // no necesitamos más, basta con 1 fecha disponible
                 }
-                if ($isFeriado) continue;
-
-                // Si ya existe cualquier calendario para el doctor en esta fecha, considerar como no disponible
-                if (\App\Models\Calendario::existsFor($doctorId, $fecha, null)) continue;
-
-                // Si llegamos aquí, hay al menos una fecha disponible para crear calendario
-                $availableDates++;
-                break 2; // no necesitamos más, basta con 1 fecha disponible
             }
 
             $scanDate->modify('+1 day');
@@ -355,39 +367,129 @@ class DoctorScheduleController
         }
 
         // Continuar: habrá al menos una fecha disponible para crear calendario
-        $patternIds = [];
+    $patternIds = [];
+    // Track newly created pattern IDs so we can cleanup on failure (avoid partial state)
+    $createdPatternIds = [];
         $slotsErrors = [];
         $createdDays = 0; $skippedDuplicates = 0; $slotsCreated = 0;
     $skippedHolidays = 0;
 
-        // Crear patrones solo cuando el formulario trae horarios para ese día. Usar sede por día si existe.
-        // Permitir múltiples horarios por día siempre que no se solapen.
-        foreach ($selectedDays as $dayKey => $_) {
-            $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
-            $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
+        // Crear patrones procesando cada fila (permite múltiples patrones por día siempre que no se solapen)
+        foreach ($days as $idx => $dayName) {
+            $dayKey = mb_strtolower(trim((string)$dayName));
+            if ($dayKey === '') continue;
+            
+            $sVal = trim((string)($horariosInicio[$idx] ?? ''));
+            $eVal = trim((string)($horariosFin[$idx] ?? ''));
             if ($sVal === '' || $eVal === '') {
-                // No hay horas para este día; no se crea patrón ni se marcará como error.
+                // No hay horas para esta fila; no se crea patrón ni se marcará como error.
                 continue;
             }
 
-            $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
+            $sedeForThisRow = isset($sedeForDay[$idx]) ? (int)$sedeForDay[$idx] : ($sedeId ?: 0);
 
-            // Validar que no se solape con patrones existentes (permite múltiples horarios si no se solapan)
+            // Validar que no se solape con patrones existentes (DB) o con los patrones creados anteriormente en esta misma petición
             $targetMonthName = strtolower($months[$mes] ?? '');
-            if (DoctorSchedule::patternsOverlap($doctorId, $sedeForDay, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
+            $tNewStart = \App\Models\DoctorSchedule::timeToSeconds($sVal);
+            $tNewEnd = \App\Models\DoctorSchedule::timeToSeconds($eVal);
+            // Prevent creating the exact same horario for the same doctor in the same day/month/year regardless of sede
+            if (\App\Models\DoctorSchedule::patternExistsIgnoreSede($doctorId, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
                 return $res->view('horarios_doctores/create', [
                     'title' => 'Asignar horarios de atención',
-                    'error' => "Día {$dayKey}: el rango de horario se solapa con otro horario existente. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.",
+                    'error' => "Fila " . ($idx + 1) . " (día {$dayKey}): ya existe el mismo horario para este médico en el mes/año indicado (no se permiten duplicados en distintas sedes).",
                     'doctors' => Doctor::getAll(),
                     'sedes' => Sede::getAll(),
                     'horarios' => DoctorSchedule::listAll(),
                     'old' => $_POST
                 ]);
             }
+            // Fetch DB candidates and check overlap using DB-returned rows (works across DB engines, including SQL Server)
+            $tNewStart = \App\Models\DoctorSchedule::timeToSeconds($sVal);
+            $tNewEnd = \App\Models\DoctorSchedule::timeToSeconds($eVal);
+            try {
+                $pdoCheck = Database::pdo();
+                $sql = 'SELECT id, sede_id, dia_semana, hora_inicio, hora_fin, mes, anio FROM horarios_medicos WHERE doctor_id = :doctorId AND activo = 1';
+                $params = [':doctorId' => $doctorId];
+                // Scope by sede if provided (also consider global patterns sede_id IS NULL)
+                $loc = ($sedeForThisRow !== null && (int)$sedeForThisRow > 0) ? (int)$sedeForThisRow : null;
+                if ($loc !== null) {
+                    $sql .= ' AND (sede_id = :loc OR sede_id IS NULL)';
+                    $params[':loc'] = $loc;
+                }
+                $stmt = $pdoCheck->prepare($sql);
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll();
+            } catch (\Throwable $_e) {
+                $rows = [];
+            }
+
+            foreach ($rows as $existingRow) {
+                try {
+                    // Normalize day names for comparison
+                    $existingDay = mb_strtolower(trim((string)$existingRow['dia_semana'] ?? ''));
+                    $normDay = mb_strtolower(trim((string)$dayKey));
+                    // normalize accents
+                    $existingDay = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $existingDay);
+                    $normDay = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $normDay);
+                    if ($existingDay !== $normDay) continue;
+
+                    // mes/anio scoping: if existing row has mes set and it doesn't match target month, skip
+                    if (!empty($existingRow['mes'])) {
+                        $existingMes = mb_strtolower(trim((string)$existingRow['mes']));
+                        if ($targetMonthName !== '' && $existingMes !== $targetMonthName) continue;
+                    }
+                    if (!empty($existingRow['anio']) && $anio !== null && (int)$existingRow['anio'] !== (int)$anio) continue;
+
+                    $tExStart = \App\Models\DoctorSchedule::timeToSeconds((string)$existingRow['hora_inicio']);
+                    $tExEnd = \App\Models\DoctorSchedule::timeToSeconds((string)$existingRow['hora_fin']);
+                    if ($tExStart === null || $tExEnd === null || $tNewStart === null || $tNewEnd === null) continue;
+                    if (\App\Models\DoctorSchedule::intervalsOverlap($tExStart, $tExEnd, $tNewStart, $tNewEnd)) {
+                        return $res->view('horarios_doctores/create', [
+                            'title' => 'Asignar horarios de atención',
+                            'error' => "Fila " . ($idx + 1) . " (día {$dayKey}): el rango de horario se solapa con otro horario existente para este doctor/sede.",
+                            'doctors' => Doctor::getAll(),
+                            'sedes' => Sede::getAll(),
+                            'horarios' => DoctorSchedule::listAll(),
+                            'old' => $_POST
+                        ]);
+                    }
+                } catch (\Throwable $__e) { continue; }
+            }
+
+            // Check patterns created earlier in this same request
+            if (!empty($createdPatternIds)) {
+                foreach ($createdPatternIds as $cpid) {
+                    try {
+                        $existing = DoctorSchedule::find((int)$cpid);
+                        if (!$existing) continue;
+                        // normalize day
+                        if (mb_strtolower(trim((string)$existing->dia_semana)) !== mb_strtolower(trim((string)$dayKey))) continue;
+                        // sede scoping
+                        $existingSede = $existing->sede_id ?? null;
+                        $loc = ($sedeForThisRow !== null && (int)$sedeForThisRow > 0) ? (int)$sedeForThisRow : null;
+                        if ($loc !== null) {
+                            if (!($existingSede === null || (int)$existingSede === $loc)) continue;
+                        }
+                        $tExStart = \App\Models\DoctorSchedule::timeToSeconds((string)$existing->hora_inicio);
+                        $tExEnd = \App\Models\DoctorSchedule::timeToSeconds((string)$existing->hora_fin);
+                        if ($tExStart === null || $tExEnd === null || $tNewStart === null || $tNewEnd === null) continue;
+                        if (\App\Models\DoctorSchedule::intervalsOverlap($tExStart, $tExEnd, $tNewStart, $tNewEnd)) {
+                            return $res->view('horarios_doctores/create', [
+                                'title' => 'Asignar horarios de atención',
+                                'error' => "Fila " . ($idx + 1) . " (día {$dayKey}): el rango de horario se solapa con otro horario creado en esta misma asignación.",
+                                'doctors' => Doctor::getAll(),
+                                'sedes' => Sede::getAll(),
+                                'horarios' => DoctorSchedule::listAll(),
+                                'old' => $_POST
+                            ]);
+                        }
+                    } catch (\Throwable $__e) { continue; }
+                }
+            }
 
             // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas/mes/anio)
-            if (DoctorSchedule::patternExists($doctorId, $sedeForDay, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
-                $existingId = DoctorSchedule::findPatternId($doctorId, $sedeForDay, $dayKey, $targetMonthName, $anio);
+            if (DoctorSchedule::patternExists($doctorId, $sedeForThisRow, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
+                $existingId = DoctorSchedule::findPatternId($doctorId, $sedeForThisRow, $dayKey, $targetMonthName, $anio);
                 // actualizar mes en el patrón existente si es diferente
                 if ($existingId) {
                     $existing = DoctorSchedule::find($existingId);
@@ -404,7 +506,7 @@ class DoctorScheduleController
             }
 
             try {
-                $newId = DoctorSchedule::createPattern($doctorId, $sedeForDay ?: null, $dayKey, $sVal, $eVal, 'Creado desde asignación masiva', ($months[$mes] ?? null), $anio);
+                $newId = DoctorSchedule::createPattern($doctorId, $sedeForThisRow ?: null, $dayKey, $sVal, $eVal, 'Creado desde asignación masiva', ($months[$mes] ?? null), $anio);
                 // guardar el mes y año en el registro (si por alguna razón createPattern no lo setea)
                 $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
                 if ($newId) {
@@ -415,6 +517,8 @@ class DoctorScheduleController
                         $p->save();
                     }
                 }
+                // track created pattern to allow cleanup if later steps fail
+                if ($newId && is_numeric($newId)) $createdPatternIds[] = (int)$newId;
                 // Acumular patrones (puede haber múltiples por día)
                 if (!isset($patternIds[$dayKey])) $patternIds[$dayKey] = [];
                 $patternIds[$dayKey][] = $newId;
@@ -519,7 +623,22 @@ class DoctorScheduleController
 
             $pdo->commit();
         } catch (\Throwable $e) {
+            // Rollback DB transaction if active
             if ($pdo->inTransaction()) $pdo->rollBack();
+
+            // Cleanup any patterns we created earlier in this request to avoid leaving partial state
+            if (!empty($createdPatternIds) && is_array($createdPatternIds)) {
+                foreach ($createdPatternIds as $pid) {
+                    try {
+                        if ($pid && is_numeric($pid)) {
+                            DoctorSchedule::hardDelete((int)$pid);
+                        }
+                    } catch (\Throwable $_e) {
+                        // ignore cleanup errors
+                    }
+                }
+            }
+
             return $res->abort(500, 'Error al crear registros en calendario/slots: ' . $e->getMessage());
         }
 
@@ -835,83 +954,6 @@ class DoctorScheduleController
             return $res->json($sedes);
         } catch (\Throwable $e) {
             error_log('[doctorSedes] Error: ' . $e->getMessage());
-            return $res->json([], 500);
-        }
-    }
-
-    /**
-     * Devuelve en JSON los días de la semana (clave en español) que ya están registrados
-     * para un doctor en la tabla `horarios_medicos`. Usado por la UI para filtrar selects.
-     */
-    public function usedDays(Request $req, Response $res)
-    {
-        $user = $_SESSION['user'] ?? null;
-        if (!$user) return $res->abort(403, 'Forbidden');
-
-        $id = (int)($req->params['id'] ?? 0);
-        if ($id <= 0) return $res->json([], 400);
-
-        try {
-            // Determinar mes pasado en la ruta: puede ser nombre en español ('octubre') o número (1..12)
-            $monthParam = $req->params['month'] ?? null;
-            $yearParam = $req->params['year'] ?? null;
-            $yearInt = null;
-            if ($yearParam !== null && is_numeric($yearParam)) {
-                $yearInt = (int)$yearParam;
-            }
-            $monthName = null;
-            $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
-            if ($monthParam !== null) {
-                $mp = mb_strtolower(trim((string)$monthParam));
-                if (is_numeric($mp)) {
-                    $mi = (int)$mp;
-                    if ($mi >=1 && $mi <=12) $monthName = $months[$mi];
-                } else {
-                    // Normalize common variants and accents
-                    $mp = str_replace(['á','é','í','ó','ú'], ['a','e','i','o','u'], $mp);
-                    // If the client sent 'octubre' or 'Octubre', it's fine.
-                    foreach ($months as $n => $m) {
-                        if ($m === $mp || str_replace(['á','é','í','ó','ú'], ['a','e','i','o','u'], $m) === $mp) {
-                            $monthName = $m; break;
-                        }
-                    }
-                }
-            }
-
-            // Construir query: si se proporcionó monthName, incluir patrones globales (mes NULL/empty) y patrones para ese mes
-            $baseQuery = DoctorSchedule::where('doctor_id', $id)
-                        ->whereNotNull('dia_semana')
-                        ->where('activo', true);
-
-            if ($monthName !== null) {
-                $baseQuery = $baseQuery->where(function($q) use ($monthName, $yearInt) {
-                    $q->whereNull('mes')->orWhere('mes', '')->orWhere(function($q2) use ($monthName, $yearInt) {
-                        $q2->where('mes', $monthName);
-                        // Si el cliente pasó un año, preferimos patrones con anio NULL (global) o con ese anio
-                        if ($yearInt !== null) {
-                            $q2->where(function($q3) use ($yearInt) {
-                                $q3->whereNull('anio')->orWhere('anio', (int)$yearInt);
-                            });
-                        }
-                    });
-                });
-            }
-
-            $query = $baseQuery->distinct()->pluck('dia_semana');
-
-            $days = is_array($query) ? $query : $query->toArray();
-            $norm = [];
-            foreach ($days as $d) {
-                $k = mb_strtolower(trim((string)$d));
-                // normalize common variants
-                if ($k === 'miercoles') $k = 'miércoles';
-                if ($k === 'sabado') $k = 'sábado';
-                if ($k !== '' && !in_array($k, $norm, true)) $norm[] = $k;
-            }
-
-            return $res->json($norm);
-        } catch (\Throwable $e) {
-            error_log('[usedDays] Error: ' . $e->getMessage());
             return $res->json([], 500);
         }
     }

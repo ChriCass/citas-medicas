@@ -154,6 +154,40 @@ class DoctorSchedule extends BaseModel
     }
 
     /**
+     * Check if a doctor already has a pattern with the exact same start/end and day
+     * regardless of sede (useful to prevent duplicate time slots across sedes for same doctor).
+     */
+    public static function patternExistsIgnoreSede(int $doctorId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null): bool
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [mb_strtolower(trim($diaSemana))])
+                       ->where('hora_inicio', $start)
+                       ->where('hora_fin', $end)
+                       ->active();
+
+        // mes/anio scoping similar to patternExists
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
+            });
+        } else {
+            $query->where(function($q){ $q->whereNull('mes')->orWhere('mes',''); });
+        }
+
+        return $query->exists();
+    }
+
+    /**
      * Buscar un patrón activo para el doctor/sede y día de la semana (devuelve id o null).
      */
     public static function findPatternId(int $doctorId, ?int $locationId, string $diaSemana, ?string $mes = null, ?int $anio = null): ?int
@@ -216,30 +250,30 @@ class DoctorSchedule extends BaseModel
      */
     public static function overlaps(int $doctorId, int $locationId, string $date, string $start, string $end, int $excludeId = null): bool
     {
+        // Build a clear, well-scoped query to detect overlapping schedules for the given date.
         $query = static::where('doctor_id', $doctorId)
                        ->where('fecha', $date)
-                       ->active()
-                       ->where(function($q) use ($start, $end) {
-                           $q->where(function($sub) use ($start, $end) {
-                               $sub->where('hora_inicio', '<', $end)
-                                   ->where('hora_fin', '>', $start);
-                           });
-                       });
-        
-        // Validación de sede:
-        // - Si el nuevo horario tiene sede específica, sólo validar contra horarios de esa sede o globales
-        // - Si el nuevo horario es global (sede NULL), validar contra TODOS los horarios del día
+                       ->active();
+
+        // Time overlap: existing.hora_inicio < new_end AND existing.hora_fin > new_start
+        $query->where(function($q) use ($start, $end) {
+            $q->where('hora_inicio', '<', $end)
+              ->where('hora_fin', '>', $start);
+        });
+
+        // Sede scoping:
+        // - If the new schedule targets a specific sede, only consider existing schedules for that sede or global ones (sede_id IS NULL)
+        // - If the new schedule is global (locationId <= 0), consider all existing schedules for that date
         if ($locationId > 0) {
             $query->where(function($q) use ($locationId) {
                 $q->where('sede_id', $locationId)->orWhereNull('sede_id');
             });
         }
-        // Si locationId es 0 o NULL (horario global), la query ya valida contra todos
-        
+
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
         }
-        
+
         return $query->exists();
     }
     
@@ -251,34 +285,41 @@ class DoctorSchedule extends BaseModel
      */
     public static function patternsOverlap(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null, ?int $excludeId = null): bool
     {
-        $query = static::where('doctor_id', $doctorId)
-                       ->where('dia_semana', $diaSemana)
-                       ->active()
-                       ->where(function($q) use ($start, $end) {
-                           $q->where('hora_inicio', '<', $end)
-                             ->where('hora_fin', '>', $start);
-                       });
+        // Normalize inputs: diaSemana -> lowercase normalized (remove accents), locationId to int/null
+        $normalize = function(string $s): string {
+            $s = mb_strtolower(trim($s));
+            $s = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $s);
+            return $s;
+        };
+        $diaSemanaNorm = $normalize($diaSemana);
+        $loc = ($locationId !== null && (int)$locationId > 0) ? (int)$locationId : null;
 
-        // Validación de sede similar a overlaps()
-        if ($locationId && (int)$locationId > 0) {
-            $query->where(function($q) use ($locationId) {
-                $q->where('sede_id', (int)$locationId)->orWhereNull('sede_id');
+        // Base query: same doctor and normalized day-of-week and active
+    $query = static::where('doctor_id', $doctorId)
+               ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+               ->active();
+
+        // Sede scoping: if new pattern is for a specific sede, only check that sede and global patterns
+        if ($loc !== null) {
+            $query->where(function($q) use ($loc) {
+                $q->where('sede_id', $loc)->orWhereNull('sede_id');
             });
         }
-        // Si locationId es NULL (horario global), validar contra todos
 
-        // Filtrar por mes/año si se proveen
+        // Mes/anio scoping: include patterns that are global (mes NULL/empty) or match the provided month/year
         if ($mes !== null && trim((string)$mes) !== '') {
             $m = mb_strtolower(trim((string)$mes));
             $query->where(function($q) use ($m, $anio) {
-                $q->where('mes', $m);
-                if ($anio !== null && (int)$anio > 0) {
-                    $q->where(function($q2) use ($anio) {
-                        $q2->whereNull('anio')->orWhere('anio', (int)$anio);
-                    });
-                }
-            })->orWhere(function($q) {
-                $q->whereNull('mes')->orWhere('mes', '');
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
             });
         }
 
@@ -286,13 +327,133 @@ class DoctorSchedule extends BaseModel
             $query->where('id', '!=', $excludeId);
         }
 
-        return $query->exists();
+        // Time overlap clause: fetch candidates and perform strict PHP comparison to avoid DB edge-case mismatches
+        $candidates = $query->get();
+
+        $tNewStart = static::timeToSeconds($start);
+        $tNewEnd = static::timeToSeconds($end);
+        foreach ($candidates as $existing) {
+            $exStart = (string)($existing->hora_inicio ?? '');
+            $exEnd = (string)($existing->hora_fin ?? '');
+            if ($exStart === '' || $exEnd === '') continue;
+            $tExStart = static::timeToSeconds($exStart);
+            $tExEnd = static::timeToSeconds($exEnd);
+            if ($tExStart === null || $tExEnd === null || $tNewStart === null || $tNewEnd === null) continue;
+
+            // Overlap condition (strict): existing.start < new.end AND existing.end > new.start
+            $conflict = static::intervalsOverlap($tExStart, $tExEnd, $tNewStart, $tNewEnd);
+            if ($conflict) {
+                // Log debug info to temp file to help diagnose adjacency/overlap issues
+                try {
+                    $logFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'citas_overlap.log';
+                    $payload = [
+                        'timestamp' => date('c'),
+                        'doctor_id' => $doctorId,
+                        'called_location' => $locationId,
+                        'normalized_location' => $loc,
+                        'dia_semana' => $diaSemana,
+                        'dia_semana_norm' => $diaSemanaNorm,
+                        'new_start' => $start,
+                        'new_end' => $end,
+                        'candidate_id' => $existing->id ?? null,
+                        'candidate_sede' => $existing->sede_id ?? null,
+                        'candidate_start' => $exStart,
+                        'candidate_end' => $exEnd,
+                        'tExStart' => $tExStart,
+                        'tExEnd' => $tExEnd,
+                        'tNewStart' => $tNewStart,
+                        'tNewEnd' => $tNewEnd,
+                    ];
+                    file_put_contents($logFile, json_encode($payload, JSON_UNESCAPED_UNICODE) . PHP_EOL, FILE_APPEND | LOCK_EX);
+                } catch (\Throwable $e) {
+                    // swallow logging errors
+                }
+                return true;
+            }
+        }
+        // If no candidates produced a conflict, return false
+        return false;
     }
     
     public static function for(int $doctorId, int $locationId, int $weekday): array
     {
         // Método obsoleto mantenido para compatibilidad
         return [];
+    }
+
+    /**
+     * Convert a time-like string (HH:MM[:SS][.micro]) to seconds since midnight, or null on failure.
+     */
+    public static function timeToSeconds(?string $time): ?int
+    {
+        if ($time === null) return null;
+        $time = trim($time);
+        if ($time === '') return null;
+        if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2})(?:[\.\,]\d+)?)?$/', $time, $m)) {
+            $h = (int)$m[1];
+            $min = (int)$m[2];
+            $sec = isset($m[3]) && $m[3] !== '' ? (int)$m[3] : 0;
+            return $h * 3600 + $min * 60 + $sec;
+        }
+        $ts = @strtotime('1970-01-01 ' . $time);
+        if ($ts === false) return null;
+        $dt = new \DateTime('@' . $ts);
+        return ((int)$dt->format('H')) * 3600 + ((int)$dt->format('i')) * 60 + (int)$dt->format('s');
+    }
+
+    /**
+     * Decide whether two time intervals overlap. All inputs are seconds-since-midnight.
+     * Uses strict overlap: A.start < B.end AND A.end > B.start
+     */
+    public static function intervalsOverlap(int $aStart, int $aEnd, int $bStart, int $bEnd): bool
+    {
+        return ($aStart < $bEnd && $aEnd > $bStart);
+    }
+
+    /**
+     * Return candidate patterns (existing DB records) that should be considered when checking overlaps
+     * for a given doctor/day and optional location/month/year.
+     * This mirrors the scoping used by patternsOverlap but returns the actual candidates for PHP checks.
+     */
+    public static function candidatesForPattern(int $doctorId, ?int $locationId, string $diaSemana, ?string $mes = null, ?int $anio = null, ?int $excludeId = null)
+    {
+        $normalize = function(string $s): string {
+            $s = mb_strtolower(trim($s));
+            $s = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $s);
+            return $s;
+        };
+        $diaSemanaNorm = $normalize($diaSemana);
+        $loc = ($locationId !== null && (int)$locationId > 0) ? (int)$locationId : null;
+
+        $query = static::where('doctor_id', $doctorId)
+                    ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+                    ->active();
+
+        if ($loc !== null) {
+            $query->where(function($q) use ($loc) {
+                $q->where('sede_id', $loc)->orWhereNull('sede_id');
+            });
+        }
+
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
+            });
+        }
+
+        if ($excludeId) $query->where('id', '!=', $excludeId);
+
+        return $query->get();
     }
     
     // Accessors para compatibilidad

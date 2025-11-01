@@ -43,7 +43,3 @@ $router->post('/doctor-schedules/{id}/update', [DoctorScheduleController::class,
 $router->post('/doctor-schedules/{id}/apply',  [DoctorScheduleController::class, 'apply'],  ['auth']);
 // Endpoint AJAX: obtener sedes de un doctor
 $router->get('/doctors/{id}/sedes', [DoctorScheduleController::class, 'doctorSedes'], ['auth']);
-// Endpoint AJAX: obtener días de semana ya usados por un doctor (para filtrar selects)
-// Endpoint que acepta mes y opcionalmente año para filtrar días ya usados
-$router->get('/doctors/{id}/{month}/{year}/used-days', [DoctorScheduleController::class, 'usedDays'], ['auth']);
-$router->get('/doctors/{id}/{month}/used-days', [DoctorScheduleController::class, 'usedDays'], ['auth']);

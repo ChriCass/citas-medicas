@@ -117,7 +117,7 @@ $timeOptions = [
                 </select>
               </td>
               <td style="padding:6px;vertical-align:middle;">
-                <select name="sede_for_day[<?= htmlspecialchars($dayKey) ?>]" class="input sede-select">
+                <select name="sede_for_day[]" class="input sede-select">
                   <option value="">— Cualquier sede —</option>
                   <?php foreach (($sedes ?? []) as $s): ?>
                     <option value="<?= (int)$s['id'] ?>" <?= ((string)$oldSede === (string)$s['id']) ? 'selected' : '' ?>><?= htmlspecialchars($s['nombre_sede'] ?? $s['nombre'] ?? '') ?></option>
@@ -125,7 +125,7 @@ $timeOptions = [
                 </select>
               </td>
               <td style="padding:6px;vertical-align:middle;">
-                <select name="horarios_inicio[<?= htmlspecialchars($dayKey) ?>]" class="input time-24 start-select">
+                <select name="horarios_inicio[]" class="input time-24 start-select">
                   <option value="">—</option>
                   <?php foreach ($timeOptions as $t): ?>
                     <option value="<?= htmlspecialchars($t) ?>" <?= ($oldStart === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
@@ -133,7 +133,7 @@ $timeOptions = [
                 </select>
               </td>
               <td style="padding:6px;vertical-align:middle;">
-                <select name="horarios_fin[<?= htmlspecialchars($dayKey) ?>]" class="input time-24 end-select">
+                <select name="horarios_fin[]" class="input time-24 end-select">
                   <option value="">—</option>
                   <?php foreach ($timeOptions as $t): ?>
                     <option value="<?= htmlspecialchars($t) ?>" <?= ($oldEnd === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
@@ -247,85 +247,8 @@ $timeOptions = [
       return [];
     };
 
-    // --- Días usados (horarios) del doctor y filtrado de días disponibles ---
-    window.usedDays = window.usedDays || [];
-  var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
-  var MONTHS = {1:'enero',2:'febrero',3:'marzo',4:'abril',5:'mayo',6:'junio',7:'julio',8:'agosto',9:'septiembre',10:'octubre',11:'noviembre',12:'diciembre'};
+    var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
     var FULL_DAY_KEYS = Object.keys(DAYS_OPTS); // ['lunes','martes',...]
-  
-  <?php
-    // Definir los mapeos en PHP y exportarlos a JavaScript para garantizar codificación correcta
-    $convA = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
-    $convB = [0=>'domingo',1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado'];
-  ?>
-  var DAY_MAP_A = <?= json_encode($convA, JSON_UNESCAPED_UNICODE) ?>;
-  var DAY_MAP_B = <?= json_encode($convB, JSON_UNESCAPED_UNICODE) ?>;
-
-    window.normalizeStr = function(s) {
-      if (s === null || s === undefined) return '';
-      return String(s).toLowerCase().trim()
-        .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i')
-        .replace(/ó/g, 'o').replace(/ú/g, 'u').replace(/ü/g, 'u')
-        .replace(/ñ/g, 'n');
-    }
-
-    window.mapNumberToKey = function(n) {
-      var m = parseInt(n, 10);
-      if (isNaN(m)) return null;
-      // try 1=lunes..7=domingo
-      if (DAY_MAP_A[m] && FULL_DAY_KEYS.indexOf(DAY_MAP_A[m]) !== -1) return DAY_MAP_A[m];
-      // try 0=domingo,1=lunes..6=sábado
-      if (DAY_MAP_B[m] && FULL_DAY_KEYS.indexOf(DAY_MAP_B[m]) !== -1) return DAY_MAP_B[m];
-      return null;
-    }
-
-    window.normalizeDayValue = function(v) {
-      if (v === null || v === undefined) return null;
-      if (!isNaN(parseInt(v,10)) && String(v).trim() !== '') {
-        var byNum = mapNumberToKey(v);
-        if (byNum) return byNum;
-      }
-      var s = normalizeStr(v);
-      for (var i=0;i<FULL_DAY_KEYS.length;i++){
-        var key = FULL_DAY_KEYS[i];
-        if (normalizeStr(key) === s) return key;
-        if (normalizeStr(DAYS_OPTS[key]) === s) return key;
-      }
-      return null;
-    }
-
-    window.loadUsedDays = async function(doctorId){
-      if (!doctorId) { window.usedDays = []; window.updateAllDaySelects(); return; }
-      // Get selected month from the #mes select and convert to spanish month name
-      var mesSel = document.getElementById('mes');
-      var mesVal = mesSel ? mesSel.value : null;
-      var monthName = null;
-      var yearSel = document.getElementById('anio');
-      var yearVal = yearSel ? yearSel.value : null;
-      if (mesVal) {
-        var mi = parseInt(mesVal, 10);
-        if (!isNaN(mi) && MONTHS[mi]) monthName = MONTHS[mi];
-        else monthName = String(mesVal).toLowerCase();
-      } else {
-        // default to current month name
-        var now = new Date(); var cm = now.getMonth() + 1; monthName = MONTHS[cm];
-      }
-
-      try {
-        var url = '/doctors/' + encodeURIComponent(doctorId) + '/' + encodeURIComponent(monthName || '') + '/' + encodeURIComponent(yearVal || '') + '/used-days';
-        var res = await fetch(url, { credentials: 'same-origin' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var data = await res.json();
-        var list = Array.isArray(data) ? data : [];
-        var norm = [];
-        list.forEach(function(it){ var k = normalizeDayValue(it); if (k && norm.indexOf(k) === -1) norm.push(k); });
-        window.usedDays = norm;
-      } catch (err) {
-        console.warn('[UsedDays] Error loading:', err);
-        window.usedDays = [];
-      }
-      window.updateAllDaySelects();
-    }
 
     window.getSelectedDays = function() {
       var vals = [];
@@ -397,7 +320,6 @@ $timeOptions = [
 
     if (doctorSelect.value) {
       loadSedes(doctorSelect.value);
-      loadUsedDays(doctorSelect.value);
     }
 
     doctorSelect.addEventListener('change', function(){
@@ -411,7 +333,6 @@ $timeOptions = [
         sel.appendChild(def);
       });
       loadSedes(this.value);
-      loadUsedDays(this.value);
     });
     // When the selected month changes, reload used days for the current doctor
     var mesSelect = document.getElementById('mes');
@@ -442,7 +363,7 @@ $timeOptions = [
           var hint = document.getElementById('anioHint'); if (hint) hint.textContent = 'Año utilizado: ' + yearToUse + '. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).';
         } catch (e) {}
 
-        loadUsedDays(doctorSelect.value);
+  // no used-days fetch: we don't query server for already-used week-days here
       });
     }
   })();
@@ -528,19 +449,20 @@ $timeOptions = [
       var startSel = row.querySelector('.start-select');
       var endSel = row.querySelector('.end-select');
       var sedeSel = row.querySelector('.sede-select');
-      var key = (daySel.value || '').trim();
+      // Keep array-style names for server-side indexing consistency.
       if (startSel) {
-        startSel.name = key ? ('horarios_inicio[' + key + ']') : 'horarios_inicio[]';
-        startSel.required = !!key;
-        startSel.disabled = !key;
+        startSel.name = 'horarios_inicio[]';
+        // require start only when a day is chosen
+        startSel.required = !!(daySel && (daySel.value || '').trim());
+        startSel.disabled = !(daySel && (daySel.value || '').trim());
       }
       if (endSel) {
-        endSel.name = key ? ('horarios_fin[' + key + ']') : 'horarios_fin[]';
-        endSel.required = !!key;
-        endSel.disabled = !key;
+        endSel.name = 'horarios_fin[]';
+        endSel.required = !!(daySel && (daySel.value || '').trim());
+        endSel.disabled = !(daySel && (daySel.value || '').trim());
       }
       if (sedeSel) {
-        sedeSel.name = key ? ('sede_for_day[' + key + ']') : 'sede_for_day[]';
+        sedeSel.name = 'sede_for_day[]';
       }
     }
 
