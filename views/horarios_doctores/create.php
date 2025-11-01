@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+header('Content-Type: text/html; charset=utf-8');
 // Vista: formulario para CREAR HORARIOS semanales (Step 1: Admin define schedule patterns)
 // Espera: $title, $doctors, $sedes, $error (opcional) y $old (opcional)
 $role = $_SESSION['user']['rol'] ?? '';
@@ -250,6 +252,14 @@ $timeOptions = [
   var DAYS_OPTS = <?= json_encode($daysOpts, JSON_UNESCAPED_UNICODE) ?>;
   var MONTHS = {1:'enero',2:'febrero',3:'marzo',4:'abril',5:'mayo',6:'junio',7:'julio',8:'agosto',9:'septiembre',10:'octubre',11:'noviembre',12:'diciembre'};
     var FULL_DAY_KEYS = Object.keys(DAYS_OPTS); // ['lunes','martes',...]
+  
+  <?php
+    // Definir los mapeos en PHP y exportarlos a JavaScript para garantizar codificación correcta
+    $convA = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
+    $convB = [0=>'domingo',1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado'];
+  ?>
+  var DAY_MAP_A = <?= json_encode($convA, JSON_UNESCAPED_UNICODE) ?>;
+  var DAY_MAP_B = <?= json_encode($convB, JSON_UNESCAPED_UNICODE) ?>;
 
     window.normalizeStr = function(s) {
       if (s === null || s === undefined) return '';
@@ -263,11 +273,9 @@ $timeOptions = [
       var m = parseInt(n, 10);
       if (isNaN(m)) return null;
       // try 1=lunes..7=domingo
-      var convA = {1:'lunes',2:'martes',3:'miércoles',4:'jueves',5:'viernes',6:'sábado',7:'domingo'};
+      if (DAY_MAP_A[m] && FULL_DAY_KEYS.indexOf(DAY_MAP_A[m]) !== -1) return DAY_MAP_A[m];
       // try 0=domingo,1=lunes..6=sábado
-      var convB = {0:'domingo',1:'lunes',2:'martes',3:'miércoles',4:'jueves',5:'viernes',6:'sábado'};
-      if (convA[m] && FULL_DAY_KEYS.indexOf(convA[m]) !== -1) return convA[m];
-      if (convB[m] && FULL_DAY_KEYS.indexOf(convB[m]) !== -1) return convB[m];
+      if (DAY_MAP_B[m] && FULL_DAY_KEYS.indexOf(DAY_MAP_B[m]) !== -1) return DAY_MAP_B[m];
       return null;
     }
 

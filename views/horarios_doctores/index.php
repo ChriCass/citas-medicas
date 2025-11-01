@@ -100,13 +100,14 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
       <table class="table" style="min-width:1200px;border-collapse:collapse;">
         <thead>
           <tr>
-            <th style="position:sticky;left:0;background:#f7f7f7;z-index:2;padding:8px;">Colegio / Doctor</th>
-            <th style="position:sticky;left:240px;background:#f7f7f7;z-index:2;padding:8px;">Sede</th>
+            <th style="position:sticky;left:0;background:#f7f7f7;z-index:3;padding:8px;width:80px;text-align:center;">Acciones</th>
+            <th style="position:sticky;left:80px;background:#f7f7f7;z-index:2;padding:8px;">Colegio / Doctor</th>
+            <th style="position:sticky;left:320px;background:#f7f7f7;z-index:2;padding:8px;">Sede</th>
             <?php for ($d = 1; $d <= $daysInMonth; $d++):
                 $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
                 $short = date('d', strtotime($dateStr));
                 $w = (int)date('N', strtotime($dateStr));
-                $label = $short . ' ' . ucfirst(substr($weekdayMap[$w],0,3));
+                $label = $short . ' ' . ucfirst(mb_substr($weekdayMap[$w],0,3,'UTF-8'));
             ?>
               <th style="padding:6px;text-align:center;"><?= $label ?></th>
             <?php endfor; ?>
@@ -118,11 +119,37 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
               $search = strtolower(($doc?->user?->nombre ?? '') . ' ' . ($doc?->user?->apellido ?? '') . ' ' . ($doc?->user?->email ?? '') . ' ' . ($sede?->nombre_sede ?? ''));
           ?>
           <tr data-search="<?= htmlspecialchars($search) ?>">
-            <td style="white-space:nowrap;padding:8px;min-width:220px;"> 
+            <td style="position:sticky;left:0;background:#fff;z-index:1;padding:8px;text-align:center;white-space:nowrap;">
+              <div style="display:flex;gap:4px;justify-content:center;">
+                <a href="/doctor-schedules/edit/<?= $doc?->id ?? '' ?>" 
+                   style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;"
+                   title="Editar">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" />
+                    <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z" />
+                    <path d="M16 5l3 3" />
+                  </svg>
+                </a>
+                <button onclick="if(confirm('¿Eliminar este horario?')) window.location.href='/doctor-schedules/delete/<?= $doc?->id ?? '' ?>'"
+                        style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;"
+                        title="Eliminar">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                    <path d="M4 7l16 0" />
+                    <path d="M10 11l0 6" />
+                    <path d="M14 11l0 6" />
+                    <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                    <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+                  </svg>
+                </button>
+              </div>
+            </td>
+            <td style="position:sticky;left:80px;background:#fff;z-index:1;white-space:nowrap;padding:8px;min-width:220px;"> 
               <strong><?= htmlspecialchars($doc?->user?->nombre ?? '') ?> <?= htmlspecialchars($doc?->user?->apellido ?? '') ?></strong>
               <div class="muted" style="font-size:12px;"><?= htmlspecialchars($doc?->user?->email ?? '') ?></div>
             </td>
-            <td style="white-space:nowrap;padding:8px;min-width:200px;"><?= htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede') ?></td>
+            <td style="position:sticky;left:300px;background:#fff;z-index:1;white-space:nowrap;padding:8px;min-width:200px;"><?= htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede') ?></td>
             <?php for ($d = 1; $d <= $daysInMonth; $d++):
                 $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
                 $w = (int)date('N', strtotime($dateStr));
