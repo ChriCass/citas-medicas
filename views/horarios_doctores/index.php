@@ -96,20 +96,21 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
   <?php if (empty($rows)): ?>
     <div class="card"><div class="content"><p class="muted">No hay horarios registrados para el período seleccionado.</p></div></div>
   <?php else: ?>
-    <div style="overflow:auto;border:1px solid #eee;padding:8px;background:#fff;">
-      <table class="table" style="min-width:1200px;border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th style="position:sticky;left:0;background:#f7f7f7;z-index:3;padding:8px;width:80px;text-align:center;">Acciones</th>
-            <th style="position:sticky;left:80px;background:#f7f7f7;z-index:2;padding:8px;">Colegio / Doctor</th>
-            <th style="position:sticky;left:320px;background:#f7f7f7;z-index:2;padding:8px;">Sede</th>
+    <div style="position: relative; width: 100%; border: 1px solid #ddd; background: #fff;">
+      <div style="width: 100%; overflow-x: auto; overflow-y: visible; scrollbar-gutter: stable;">
+        <table class="table" style="border-collapse: collapse; border-spacing: 0; width: max-content;">
+          <thead>
+            <tr>
+              <th style="position: sticky; top: 0; left: 0; background: #f8f9fa; z-index: 3; width: 110px; text-align: center; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Acciones</th>
+              <th style="position: sticky; top: 0; left: 110px; background: #f8f9fa; z-index: 3; width: 200px; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Doctor</th>
+              <th style="position: sticky; top: 0; left: 310px; background: #f8f9fa; z-index: 3; width: 200px; border-right: 2px solid #dee2e6; border-bottom: 2px solid #dee2e6;">Sede</th>
             <?php for ($d = 1; $d <= $daysInMonth; $d++):
                 $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
                 $short = date('d', strtotime($dateStr));
                 $w = (int)date('N', strtotime($dateStr));
                 $label = $short . ' ' . ucfirst(mb_substr($weekdayMap[$w],0,3,'UTF-8'));
             ?>
-              <th style="padding:6px;text-align:center;"><?= $label ?></th>
+              <th style="padding: 8px; text-align: center; min-width: 150px; background: #f8f9fa; border: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;"><?= $label ?></th>
             <?php endfor; ?>
           </tr>
         </thead>
@@ -119,10 +120,10 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
               $search = strtolower(($doc?->user?->nombre ?? '') . ' ' . ($doc?->user?->apellido ?? '') . ' ' . ($doc?->user?->email ?? '') . ' ' . ($sede?->nombre_sede ?? ''));
           ?>
           <tr data-search="<?= htmlspecialchars($search) ?>">
-            <td style="position:sticky;left:0;background:#fff;z-index:1;padding:8px;text-align:center;white-space:nowrap;">
-              <div style="display:flex;gap:4px;justify-content:center;">
+            <td style="position: sticky; left: 0; background: #fff; z-index: 2; padding: 8px; text-align: center; width: 110px; border-right: 2px solid #dee2e6;">
+              <div style="display: flex; gap: 4px; justify-content: center;">
                 <a href="/doctor-schedules/edit/<?= $doc?->id ?? '' ?>" 
-                   style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;"
+                   style="background: #28a745; color: #fff; border-radius: 4px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; text-decoration: none;"
                    title="Editar">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -145,11 +146,11 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
                 </button>
               </div>
             </td>
-            <td style="position:sticky;left:80px;background:#fff;z-index:1;white-space:nowrap;padding:8px;min-width:220px;"> 
+            <td style="position: sticky; left: 110px; background: #fff; z-index: 2; padding: 8px; width: 200px; white-space: nowrap; border-right: 2px solid #dee2e6;"> 
               <strong><?= htmlspecialchars($doc?->user?->nombre ?? '') ?> <?= htmlspecialchars($doc?->user?->apellido ?? '') ?></strong>
-              <div class="muted" style="font-size:12px;"><?= htmlspecialchars($doc?->user?->email ?? '') ?></div>
+              <div class="muted" style="font-size: 12px;"><?= htmlspecialchars($doc?->user?->email ?? '') ?></div>
             </td>
-            <td style="position:sticky;left:300px;background:#fff;z-index:1;white-space:nowrap;padding:8px;min-width:200px;"><?= htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede') ?></td>
+            <td style="position: sticky; left: 310px; background: #fff; z-index: 2; padding: 8px; width: 200px; white-space: nowrap; border-right: 2px solid #dee2e6;"><?= htmlspecialchars($sede?->nombre_sede ?? 'Cualquier sede') ?></td>
             <?php for ($d = 1; $d <= $daysInMonth; $d++):
                 $dateStr = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
                 $w = (int)date('N', strtotime($dateStr));
@@ -172,7 +173,7 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
           }
         }
             ?>
-              <td style="vertical-align:top;padding:6px;min-width:110px;"><?= $cellHtml ? $cellHtml : '&nbsp;' ?></td>
+              <td style="vertical-align: top; padding: 8px; min-width: 150px; border: 1px solid #dee2e6;"><?= $cellHtml ? $cellHtml : '&nbsp;' ?></td>
             <?php endfor; ?>
           </tr>
           <?php endforeach; ?>
