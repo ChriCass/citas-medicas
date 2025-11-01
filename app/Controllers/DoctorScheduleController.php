@@ -691,7 +691,17 @@ class DoctorScheduleController
             $query->whereNull('sede_id');
         }
         // Only patterns (dia_semana) — no concrete fechas here
-        $query->whereNotNull('dia_semana')->orderBy('dia_semana')->orderBy('hora_inicio');
+        // Additionally exclude patterns that have ANY reserved slots in slots_calendario
+        // i.e. where exists a slot with horario_id = horarios_medicos.id and reservado_por_cita_id IS NOT NULL
+        $query->whereNotNull('dia_semana')
+              ->whereNotIn('id', function($sub) {
+                  $sub->select('horario_id')
+                      ->from('slots_calendario')
+                      ->whereNotNull('reservado_por_cita_id');
+              })
+              ->orderBy('dia_semana')
+              ->orderBy('hora_inicio');
+
         $horarios = $query->get();
 
         return $res->view('horarios_doctores/edit', [
@@ -701,6 +711,153 @@ class DoctorScheduleController
             'sedes' => Sede::getAll(),
             'horarios' => $horarios,
         ]);
+    }
+
+    /**
+     * Mostrar edición basada en doctor y sede: /doctor-schedules/{doctor_id}/{sede_id}
+     * Si existe al menos un patrón para ese doctor/sede, renderiza la vista de edición
+     * para el primer patrón disponible (no reservado). Si no existe patrón, redirige a create
+     * con doctor_id/sede_id en la querystring.
+     */
+    public function editByDoctorSede(Request $req, Response $res)
+    {
+        $user = $_SESSION['user'] ?? null; if (!$user) return $res->redirect('/login');
+        Auth::abortUnless($res, ['superadmin']);
+
+        $doctorId = (int)($req->params['doctor_id'] ?? 0);
+        $sedeId = isset($req->params['sede_id']) ? (int)$req->params['sede_id'] : null;
+        if ($doctorId <= 0) return $res->redirect('/doctor-schedules');
+
+        // Normalize sedeId: treat 0 or missing as null
+        if ($sedeId === 0) $sedeId = null;
+
+        // Find first pattern for this doctor/sede that does NOT have reserved slots
+        $query = DoctorSchedule::where('doctor_id', $doctorId)->whereNotNull('dia_semana');
+        if ($sedeId !== null) {
+            $query->where(function($q) use ($sedeId) {
+                $q->where('sede_id', $sedeId)->orWhereNull('sede_id');
+            });
+        } else {
+            $query->whereNull('sede_id');
+        }
+        // Exclude patterns with reserved slots
+        $query->whereNotIn('id', function($sub) {
+            $sub->select('horario_id')
+                ->from('slots_calendario')
+                ->whereNotNull('reservado_por_cita_id');
+        });
+        $pattern = $query->orderBy('hora_inicio')->first();
+
+        if ($pattern) {
+            // reuse existing edit flow: load horarios and render view
+            $sedeIdForQuery = $pattern->sede_id ?? $sedeId;
+            $q2 = DoctorSchedule::where('doctor_id', $doctorId);
+            if ($sedeIdForQuery !== null) {
+                $q2->where(function($q) use ($sedeIdForQuery) { $q->where('sede_id', $sedeIdForQuery)->orWhereNull('sede_id'); });
+            } else {
+                $q2->whereNull('sede_id');
+            }
+            $q2->whereNotNull('dia_semana')
+               ->whereNotIn('id', function($sub) {
+                   $sub->select('horario_id')->from('slots_calendario')->whereNotNull('reservado_por_cita_id');
+               })->orderBy('dia_semana')->orderBy('hora_inicio');
+            $horarios = $q2->get();
+
+            return $res->view('horarios_doctores/edit', [
+                'title' => 'Editar patrón',
+                'pattern' => $pattern,
+                'doctors' => Doctor::getAll(),
+                'sedes' => Sede::getAll(),
+                'horarios' => $horarios,
+            ]);
+        }
+
+        // No pattern found: redirect to create with prefilled doctor_id and sede_id
+        $qs = '?doctor_id=' . $doctorId;
+        if ($sedeId !== null) $qs .= '&sede_id=' . $sedeId;
+        return $res->redirect('/doctor-schedules/create' . $qs);
+    }
+
+    /**
+     * Mostrar edición basada en doctor, sede y mes/año: /doctor-schedules/{doctor_id}/{sede_id}/{month}/{year}
+     */
+    public function editByDoctorSedeMonth(Request $req, Response $res)
+    {
+        $user = $_SESSION['user'] ?? null; if (!$user) return $res->redirect('/login');
+        Auth::abortUnless($res, ['superadmin']);
+
+        $doctorId = (int)($req->params['doctor_id'] ?? 0);
+        $sedeId = isset($req->params['sede_id']) ? (int)$req->params['sede_id'] : null;
+        $month = isset($req->params['month']) ? (int)$req->params['month'] : 0;
+        $year = isset($req->params['year']) ? (int)$req->params['year'] : 0;
+
+        if ($doctorId <= 0) return $res->redirect('/doctor-schedules');
+        if ($month < 1 || $month > 12) return $res->redirect('/doctor-schedules');
+        if ($year < 1970) $year = (int)date('Y');
+
+        // Normalize sedeId: treat 0 as null
+        if ($sedeId === 0) $sedeId = null;
+
+        // Map month number to name used in DB
+        $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+        $mesName = $months[$month] ?? null;
+
+        // Find patterns for this doctor/sede that match the requested month/year (or are global) and have no reserved slots
+        $query = DoctorSchedule::where('doctor_id', $doctorId)->whereNotNull('dia_semana');
+        if ($sedeId !== null) {
+            $query->where(function($q) use ($sedeId) { $q->where('sede_id', $sedeId)->orWhereNull('sede_id'); });
+        } else {
+            $query->whereNull('sede_id');
+        }
+
+        // month/year scoping: allow patterns that are global (mes NULL/empty) or match the requested month; year can be NULL or equal
+        $query->where(function($q) use ($mesName, $year) {
+            $q->whereNull('mes')->orWhere('mes', '')->orWhere('mes', $mesName);
+        });
+        $query->where(function($q) use ($year) {
+            $q->whereNull('anio')->orWhere('anio', $year);
+        });
+
+        // exclude patterns that have reserved slots
+        $query->whereNotIn('id', function($sub) {
+            $sub->select('horario_id')->from('slots_calendario')->whereNotNull('reservado_por_cita_id');
+        });
+
+        $pattern = $query->orderBy('hora_inicio')->first();
+
+        if ($pattern) {
+            // load horarios similarly but scoped to mes/anio
+            $q2 = DoctorSchedule::where('doctor_id', $doctorId)->whereNotNull('dia_semana');
+            if ($sedeId !== null) {
+                $q2->where(function($q) use ($sedeId) { $q->where('sede_id', $sedeId)->orWhereNull('sede_id'); });
+            } else {
+                $q2->whereNull('sede_id');
+            }
+            $q2->where(function($q) use ($mesName, $year) {
+                $q->whereNull('mes')->orWhere('mes','')->orWhere('mes', $mesName);
+            });
+            $q2->where(function($q) use ($year) {
+                $q->whereNull('anio')->orWhere('anio', $year);
+            });
+            $q2->whereNotIn('id', function($sub) {
+                $sub->select('horario_id')->from('slots_calendario')->whereNotNull('reservado_por_cita_id');
+            });
+            $horarios = $q2->orderBy('dia_semana')->orderBy('hora_inicio')->get();
+
+            // Provide the selected mes/anio to the view via $pattern (pattern may already have mes/anio)
+            return $res->view('horarios_doctores/edit', [
+                'title' => 'Editar patrón',
+                'pattern' => $pattern,
+                'doctors' => Doctor::getAll(),
+                'sedes' => Sede::getAll(),
+                'horarios' => $horarios,
+            ]);
+        }
+
+        // No pattern for given criteria: redirect to create with doctor/sede/mes/anio
+        $qs = '?doctor_id=' . $doctorId . '&mes=' . $month . '&anio=' . $year;
+        if ($sedeId !== null) $qs .= '&sede_id=' . $sedeId;
+        return $res->redirect('/doctor-schedules/create' . $qs);
     }
 
     /**

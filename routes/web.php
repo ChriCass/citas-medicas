@@ -38,6 +38,9 @@ $router->post('/doctor-schedules/{id}/delete', [DoctorScheduleController::class,
 // Ruta para asignación masiva de horarios (UC-09)
 $router->post('/doctor-schedules/assign',  [DoctorScheduleController::class, 'assign'], ['auth']);
 // Editar/actualizar patrón y aplicar al calendario
+$router->get('/doctor-schedules/{doctor_id}/{sede_id}', [DoctorScheduleController::class, 'editByDoctorSede'], ['auth']);
+// Edit by doctor/sede for a specific month/year (new route)
+$router->get('/doctor-schedules/{doctor_id}/{sede_id}/{month}/{year}', [DoctorScheduleController::class, 'editByDoctorSedeMonth'], ['auth']);
 $router->get('/doctor-schedules/{id}/edit',   [DoctorScheduleController::class, 'edit'],   ['auth']);
 $router->post('/doctor-schedules/{id}/update', [DoctorScheduleController::class, 'update'], ['auth']);
 $router->post('/doctor-schedules/{id}/apply',  [DoctorScheduleController::class, 'apply'],  ['auth']);

@@ -197,8 +197,12 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
           }
         }
 
-        // Build URLs: if we have a pattern id, link to edit/delete that pattern; otherwise, link to create (prefill doctor if available)
-        $editUrl = $patternId ? ('/doctor-schedules/' . (int)$patternId . '/edit') : ('/doctor-schedules/create' . (($doc?->id ?? 0) ? ('?doctor_id=' . (int)$doc->id) : ''));
+  // Build URLs: use doctor/sede route so editing opens the doctor+sede editor
+  $docId = (int)($doc?->id ?? 0);
+  $sedeIdForLink = (int)($sede?->id ?? 0);
+  $m = (int)($selMonth ?? (int)date('n'));
+  $y = (int)($selYear ?? (int)date('Y'));
+  $editUrl = '/doctor-schedules/' . $docId . '/' . $sedeIdForLink . '/' . $m . '/' . $y;
         $acciones = '<div style="display:flex;gap:4px;justify-content:center;">'
           . '<a href="' . $editUrl . '" style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Editar">✎</a>';
 
