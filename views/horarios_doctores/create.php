@@ -328,25 +328,17 @@ $timeOptions = [
     window.populateDaySelectWithAvailableDays = function(sel) {
       if (!sel) return;
       var current = sel.value || '';
-      // compute available = FULL_DAY_KEYS - usedDays
-      var available = FULL_DAY_KEYS.filter(function(k){ return (window.usedDays||[]).indexOf(k) === -1; });
-      // Also exclude days already selected in other rows (to keep uniqueness)
-      var selectedElsewhere = window.getSelectedDays();
+      // Permitir que todos los días estén disponibles (un doctor puede tener múltiples horarios en el mismo día)
       // Build options
       sel.innerHTML = '';
       var def = document.createElement('option'); def.value=''; def.textContent='— Selecciona día —'; sel.appendChild(def);
-      available.forEach(function(k){
-        // skip if selected elsewhere and not the current value
-        if (selectedElsewhere.indexOf(k) !== -1 && k !== current) return;
-        var opt = document.createElement('option'); opt.value = k; opt.textContent = DAYS_OPTS[k]; if (k === current) opt.selected = true; sel.appendChild(opt);
+      FULL_DAY_KEYS.forEach(function(k){
+        var opt = document.createElement('option'); 
+        opt.value = k; 
+        opt.textContent = DAYS_OPTS[k]; 
+        if (k === current) opt.selected = true; 
+        sel.appendChild(opt);
       });
-      // If current value is not in options (maybe because it's now used), keep it as an option so user's selection isn't lost
-      if (current) {
-        var found = Array.prototype.some.call(sel.options, function(o){ return o.value === current; });
-        if (!found) {
-          var keep = document.createElement('option'); keep.value = current; keep.textContent = DAYS_OPTS[current] || current; keep.selected = true; sel.appendChild(keep);
-        }
-      }
     }
 
     window.updateAllDaySelects = function(){
@@ -519,22 +511,8 @@ $timeOptions = [
     }
 
     function refreshDayOptions() {
-      var selected = getSelectedDays();
-      Array.prototype.forEach.call(tbody.querySelectorAll('.day-select'), function(s){
-        var own = s.value;
-        Array.prototype.forEach.call(s.options, function(opt){
-          if (!opt.value) return;
-          opt.disabled = false;
-        });
-      });
-      
-      Array.prototype.forEach.call(tbody.querySelectorAll('.day-select'), function(s){
-        var own = s.value;
-        Array.prototype.forEach.call(s.options, function(opt){
-          if (!opt.value) return;
-          if (opt.value !== own && selected.indexOf(opt.value) !== -1) opt.disabled = true;
-        });
-      });
+      // Ya no necesitamos deshabilitar opciones - permitimos días duplicados
+      // Esta función se mantiene por compatibilidad pero no hace nada
     }
 
     function updateNamesForRow(row) {

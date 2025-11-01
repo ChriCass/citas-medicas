@@ -12,11 +12,29 @@ class DoctorScheduleController
         $user = $_SESSION['user'] ?? null; if (!$user) return $res->redirect('/login');
         Auth::abortUnless($res, ['superadmin']);
 
+        // Permitir seleccionar mes/año vía querystring (GET)
+        $selMonth = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('n');
+        $selYear = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
+        if ($selMonth < 1 || $selMonth > 12) $selMonth = (int)date('n');
+        if ($selYear < 1970) $selYear = (int)date('Y');
+
+        $startDate = \DateTime::createFromFormat('Y-n-j', "{$selYear}-{$selMonth}-1");
+        if (!$startDate) $startDate = new \DateTime("{$selYear}-{$selMonth}-01");
+        $endDate = (clone $startDate)->modify('last day of this month');
+
+        // Patrones (para legend/edición) y entradas concretas del calendario (fechas exactas)
         $schedules = DoctorSchedule::listAll();
+        $calendars = Calendario::with(['horario', 'doctor'])
+                        ->whereBetween('fecha', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                        ->get();
+
         return $res->view('horarios_doctores/index', [
             'title'     => 'Horarios Doctores',
             'schedules' => $schedules,
+            'calendars' => $calendars,
             'user'      => $user,
+            'selMonth'  => $selMonth,
+            'selYear'   => $selYear,
         ]);
     }
 
@@ -85,11 +103,12 @@ class DoctorScheduleController
             ]);
         }
 
-        // Evitar traslapes en doctor+sede+dia_semana
-        if (DoctorSchedule::overlaps($doctorId, $sedeId, $diaSemana, $start, $end)) {
+        // Validar solapamiento usando la nueva lógica que permite múltiples horarios por día/sede
+        // siempre que no se solapen en tiempo
+        if (DoctorSchedule::patternsOverlap($doctorId, $sedeId, strtolower($diaSemana), $start, $end)) {
             return $res->view('horarios_doctores/create', [
                 'title'=>'Nuevo Horario',
-                'error'=>'Este rango se solapa con otro horario existente para ese doctor/sede/día.',
+                'error'=>'Este rango de horario se solapa con otro horario existente para ese doctor/sede/día. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.',
                 'doctors'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),
                 'old'=>$_POST
@@ -261,6 +280,7 @@ class DoctorScheduleController
     $skippedHolidays = 0;
 
         // Crear patrones solo cuando el formulario trae horarios para ese día. Usar sede por día si existe.
+        // Permitir múltiples horarios por día siempre que no se solapen.
         foreach ($selectedDays as $dayKey => $_) {
             $sVal = trim((string)($horariosInicio[$dayKey] ?? ''));
             $eVal = trim((string)($horariosFin[$dayKey] ?? ''));
@@ -271,8 +291,20 @@ class DoctorScheduleController
 
             $sedeForDay = isset($_POST['sede_for_day'][$dayKey]) ? (int)$_POST['sede_for_day'][$dayKey] : ($sedeId ?: 0);
 
-            // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas/mes)
+            // Validar que no se solape con patrones existentes (permite múltiples horarios si no se solapan)
             $targetMonthName = strtolower($months[$mes] ?? '');
+            if (DoctorSchedule::patternsOverlap($doctorId, $sedeForDay, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
+                return $res->view('horarios_doctores/create', [
+                    'title' => 'Asignar horarios de atención',
+                    'error' => "Día {$dayKey}: el rango de horario se solapa con otro horario existente. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.",
+                    'doctors' => Doctor::getAll(),
+                    'sedes' => Sede::getAll(),
+                    'horarios' => DoctorSchedule::listAll(),
+                    'old' => $_POST
+                ]);
+            }
+
+            // Evitar duplicar patrones idénticos (mismo doctor/sede/dia_semana/horas/mes/anio)
             if (DoctorSchedule::patternExists($doctorId, $sedeForDay, $dayKey, $sVal, $eVal, $targetMonthName, $anio)) {
                 $existingId = DoctorSchedule::findPatternId($doctorId, $sedeForDay, $dayKey, $targetMonthName, $anio);
                 // actualizar mes en el patrón existente si es diferente
@@ -284,7 +316,9 @@ class DoctorScheduleController
                         $existing->save();
                     }
                 }
-                $patternIds[$dayKey] = $existingId;
+                // Acumular todos los patrones para este día (puede haber múltiples)
+                if (!isset($patternIds[$dayKey])) $patternIds[$dayKey] = [];
+                $patternIds[$dayKey][] = $existingId;
                 continue;
             }
 
@@ -300,7 +334,9 @@ class DoctorScheduleController
                         $p->save();
                     }
                 }
-                $patternIds[$dayKey] = $newId;
+                // Acumular patrones (puede haber múltiples por día)
+                if (!isset($patternIds[$dayKey])) $patternIds[$dayKey] = [];
+                $patternIds[$dayKey][] = $newId;
             } catch (\Throwable $e) {
                 return $res->abort(500, 'Error al crear patrón de horario: ' . $e->getMessage());
             }
@@ -331,9 +367,9 @@ class DoctorScheduleController
                     continue;
                 }
 
-                $usedHorarioId = $patternIds[$dayKey];
+                // Puede haber múltiples patrones para el mismo día (diferentes horarios/sedes)
+                $dayPatterns = is_array($patternIds[$dayKey]) ? $patternIds[$dayKey] : [$patternIds[$dayKey]];
 
-                // Evitar duplicados: mismo doctor + fecha + horario
                 // Antes de crear, comprobar si la fecha es feriado (global o para la sede del patrón)
                 try {
                     $pdoCheck = $pdo->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
@@ -343,55 +379,57 @@ class DoctorScheduleController
                     $feriados = [];
                 }
 
-                $isFeriado = false;
-                if (!empty($feriados)) {
-                    // Obtener sede del patrón (si existe)
+                // Procesar cada patrón del día (puede haber múltiples horarios/sedes)
+                foreach ($dayPatterns as $usedHorarioId) {
+                    // Validar feriado por sede del patrón
+                    $pattern = DoctorSchedule::find($usedHorarioId);
                     $patternSedeId = $pattern?->sede_id ?? null;
-                    foreach ($feriados as $fer) {
-                        // Considerar feriado activo cuando activo IS NULL o activo == 1
-                        $activo = $fer['activo'];
-                        $activoFlag = ($activo === null) ? true : (bool)$activo;
-                        if (!$activoFlag) continue;
+                    
+                    $isFeriado = false;
+                    if (!empty($feriados)) {
+                        foreach ($feriados as $fer) {
+                            // Considerar feriado activo cuando activo IS NULL o activo == 1
+                            $activo = $fer['activo'];
+                            $activoFlag = ($activo === null) ? true : (bool)$activo;
+                            if (!$activoFlag) continue;
 
-                        // Si feriado.sede_id IS NULL => aplica a todas las sedes (global)
-                        if ($fer['sede_id'] === null || $fer['sede_id'] === '' ) {
-                            $isFeriado = true; break;
-                        }
+                            // Si feriado.sede_id IS NULL => aplica a todas las sedes (global)
+                            if ($fer['sede_id'] === null || $fer['sede_id'] === '' ) {
+                                $isFeriado = true; break;
+                            }
 
-                        // Si feriado tiene sede_id y coincide con el patrón -> aplica
-                        if ($patternSedeId !== null && ((int)$fer['sede_id'] === (int)$patternSedeId)) {
-                            $isFeriado = true; break;
+                            // Si feriado tiene sede_id y coincide con el patrón -> aplica
+                            if ($patternSedeId !== null && ((int)$fer['sede_id'] === (int)$patternSedeId)) {
+                                $isFeriado = true; break;
+                            }
                         }
                     }
-                }
 
-                if ($isFeriado) {
-                    $skippedHolidays++;
-                    $current->modify('+1 day');
-                    continue;
-                }
+                    if ($isFeriado) {
+                        $skippedHolidays++;
+                        continue; // Skip este patrón pero seguir con los demás del día
+                    }
 
-                if (Calendario::existsFor($doctorId, $fecha, $usedHorarioId)) {
-                    $skippedDuplicates++;
-                    $current->modify('+1 day');
-                    continue;
-                }
+                    if (Calendario::existsFor($doctorId, $fecha, $usedHorarioId)) {
+                        $skippedDuplicates++;
+                        continue; // Skip este patrón pero seguir con los demás
+                    }
 
-                // Obtener horas desde el patrón (guardadas en horarios_medicos)
-                $pattern = DoctorSchedule::find($usedHorarioId);
-                $baseStart = $pattern?->hora_inicio ? date('H:i', strtotime($pattern->hora_inicio)) : null;
-                $baseEnd = $pattern?->hora_fin ? date('H:i', strtotime($pattern->hora_fin)) : null;
+                    // Obtener horas desde el patrón (guardadas en horarios_medicos)
+                    $baseStart = $pattern?->hora_inicio ? date('H:i', strtotime($pattern->hora_inicio)) : null;
+                    $baseEnd = $pattern?->hora_fin ? date('H:i', strtotime($pattern->hora_fin)) : null;
 
-                // Crear calendario y slots
-                $calId = Calendario::createEntry($doctorId, $usedHorarioId, $fecha, $baseStart, $baseEnd);
-                $createdDays++;
+                    // Crear calendario y slots
+                    $calId = Calendario::createEntry($doctorId, $usedHorarioId, $fecha, $baseStart, $baseEnd);
+                    $createdDays++;
 
-                if ($generateSlots) {
-                    if ($baseStart && $baseEnd) {
-                        $n = SlotCalendario::createSlots($calId, $usedHorarioId, $baseStart, $baseEnd, 15);
-                        $slotsCreated += $n;
-                    } else {
-                        $slotsErrors[] = "No hay horas definidas para el día {$fecha} (horario_id={$usedHorarioId}).";
+                    if ($generateSlots) {
+                        if ($baseStart && $baseEnd) {
+                            $n = SlotCalendario::createSlots($calId, $usedHorarioId, $baseStart, $baseEnd, 15);
+                            $slotsCreated += $n;
+                        } else {
+                            $slotsErrors[] = "No hay horas definidas para el día {$fecha} (horario_id={$usedHorarioId}).";
+                        }
                     }
                 }
 
@@ -523,26 +561,15 @@ class DoctorScheduleController
             ]);
         }
 
-        // Evitar solapamientos con otros patrones del mismo doctor/sede/día
-        $overlapQuery = DoctorSchedule::where('doctor_id', $doctorId)
-                          ->where('dia_semana', $diaSemana)
-                          ->where('activo', true)
-                          ->where('id', '!=', $id)
-                          ->where(function($q) use ($horaInicio, $horaFin) {
-                              $q->where('hora_inicio', '<', $horaFin)
-                                ->where('hora_fin', '>', $horaInicio);
-                          });
-
-        if ($sedeId !== null) {
-            $overlapQuery->where('sede_id', $sedeId);
-        } else {
-            $overlapQuery->whereNull('sede_id');
-        }
-
-        if ($overlapQuery->exists()) {
+        // Validar solapamiento usando la nueva lógica
+        $pattern = DoctorSchedule::find($id);
+        $mes = $pattern?->mes ?? null;
+        $anio = $pattern?->anio ?? null;
+        
+        if (DoctorSchedule::patternsOverlap($doctorId, $sedeId, $diaSemana, $horaInicio, $horaFin, $mes, $anio, $id)) {
             return $res->view('horarios_doctores/edit', [
                 'title'=>'Editar patrón',
-                'error'=>'Este rango se solapa con otro patrón existente.',
+                'error'=>'Este rango de horario se solapa con otro patrón existente. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.',
                 'pattern'=>DoctorSchedule::find($id),
                 'doctors'=>Doctor::getAll(),
                 'sedes'=>Sede::getAll(),

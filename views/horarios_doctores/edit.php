@@ -55,7 +55,7 @@ $timeOptions = [
     <label class="label">Hora inicio</label>
     <select name="hora_inicio" class="input" required>
       <option value="">—</option>
-      <?php $curStart = substr((string)($pattern->hora_inicio ?? ''), 0, 5); foreach ($timeOptions as $t): ?>
+      <?php $curStart = $pattern->hora_inicio ? date('H:i', strtotime($pattern->hora_inicio)) : ''; foreach ($timeOptions as $t): ?>
         <option value="<?= htmlspecialchars($t) ?>" <?= ($curStart === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
       <?php endforeach; ?>
     </select>
@@ -65,7 +65,7 @@ $timeOptions = [
     <label class="label">Hora fin</label>
     <select name="hora_fin" class="input" required>
       <option value="">—</option>
-      <?php $curEnd = substr((string)($pattern->hora_fin ?? ''), 0, 5); foreach ($timeOptions as $t): ?>
+      <?php $curEnd = $pattern->hora_fin ? date('H:i', strtotime($pattern->hora_fin)) : ''; foreach ($timeOptions as $t): ?>
         <option value="<?= htmlspecialchars($t) ?>" <?= ($curEnd === $t) ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
       <?php endforeach; ?>
     </select>

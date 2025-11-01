@@ -118,6 +118,7 @@ class DoctorSchedule extends BaseModel
 
     /**
      * Comprueba si existe un patrón activo igual para evitar duplicados.
+     * Permite múltiples horarios por doctor/día siempre que no sean exactamente iguales.
      */
     public static function patternExists(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null): bool
     {
@@ -206,6 +207,13 @@ class DoctorSchedule extends BaseModel
         return $schedule->delete();
     }
     
+    /**
+     * Valida si un horario se solapa con otros horarios del mismo doctor.
+     * Permite múltiples horarios en el mismo día siempre que:
+     * - No se solapen en la misma sede
+     * - Se puede trabajar en diferentes sedes en el mismo día
+     * - Horarios globales (sede NULL) se validan contra todos los horarios del día
+     */
     public static function overlaps(int $doctorId, int $locationId, string $date, string $start, string $end, int $excludeId = null): bool
     {
         $query = static::where('doctor_id', $doctorId)
@@ -218,16 +226,66 @@ class DoctorSchedule extends BaseModel
                            });
                        });
         
+        // Validación de sede:
+        // - Si el nuevo horario tiene sede específica, sólo validar contra horarios de esa sede o globales
+        // - Si el nuevo horario es global (sede NULL), validar contra TODOS los horarios del día
         if ($locationId > 0) {
-            $query->where('sede_id', $locationId);
-        } else {
-            $query->whereNull('sede_id');
+            $query->where(function($q) use ($locationId) {
+                $q->where('sede_id', $locationId)->orWhereNull('sede_id');
+            });
         }
+        // Si locationId es 0 o NULL (horario global), la query ya valida contra todos
         
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
         }
         
+        return $query->exists();
+    }
+    
+    /**
+     * Valida solapamiento de patrones semanales (por día de semana).
+     * Un doctor puede tener múltiples horarios en el mismo día de la semana siempre que:
+     * - No se solapen en tiempo dentro de la misma sede
+     * - Puede trabajar en diferentes sedes en el mismo día de la semana
+     */
+    public static function patternsOverlap(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null, ?int $excludeId = null): bool
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('dia_semana', $diaSemana)
+                       ->active()
+                       ->where(function($q) use ($start, $end) {
+                           $q->where('hora_inicio', '<', $end)
+                             ->where('hora_fin', '>', $start);
+                       });
+
+        // Validación de sede similar a overlaps()
+        if ($locationId && (int)$locationId > 0) {
+            $query->where(function($q) use ($locationId) {
+                $q->where('sede_id', (int)$locationId)->orWhereNull('sede_id');
+            });
+        }
+        // Si locationId es NULL (horario global), validar contra todos
+
+        // Filtrar por mes/año si se proveen
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where('mes', $m);
+                if ($anio !== null && (int)$anio > 0) {
+                    $q->where(function($q2) use ($anio) {
+                        $q2->whereNull('anio')->orWhere('anio', (int)$anio);
+                    });
+                }
+            })->orWhere(function($q) {
+                $q->whereNull('mes')->orWhere('mes', '');
+            });
+        }
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
         return $query->exists();
     }
     

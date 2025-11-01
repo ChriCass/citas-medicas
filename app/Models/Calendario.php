@@ -2,6 +2,9 @@
 namespace App\Models;
 
 use App\Models\BaseModel;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Doctor;
+use App\Models\DoctorSchedule;
 
 class Calendario extends BaseModel
 {
@@ -41,5 +44,16 @@ class Calendario extends BaseModel
 
         $c->save();
         return (int)$c->id;
+    }
+
+    // Relaciones
+    public function horario(): BelongsTo
+    {
+        return $this->belongsTo(DoctorSchedule::class, 'horario_id');
+    }
+
+    public function doctor(): BelongsTo
+    {
+        return $this->belongsTo(Doctor::class, 'doctor_id');
     }
 }
