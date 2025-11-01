@@ -77,7 +77,7 @@ $timeOptions = [
           $nextYear = $currentYear + 1;
           $usedYear = ($now === 12 && (int)($old['mes'] ?? $now) !== 12) ? $nextYear : $currentYear;
         ?>
-        <input type="hidden" name="anio" id="anio" value="<?= htmlspecialchars($usedYear) ?>">
+  <input type="hidden" name="anio" id="anio" value="<?= htmlspecialchars((string)$usedYear) ?>">
         <small id="anioHint" class="hint" style="margin-top:6px;">Año utilizado: <?= $usedYear ?>. (Si hoy es diciembre y eliges un mes distinto a diciembre, se usará el año siguiente).</small>
     </div>
   </div>
