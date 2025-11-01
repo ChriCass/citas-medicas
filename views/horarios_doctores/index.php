@@ -56,16 +56,11 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
 
 ?>
 <section class="hero">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
     <div>
       <h1><?= htmlspecialchars($title ?? 'Horarios Doctores') ?></h1>
-      <p class="mt-1 muted">Vista mensual: selecciona mes/año para ver la grilla.</p>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <a href="#" class="btn" id="downloadBtn">📥 Descargar</a>
       <a href="/doctor-schedules/create" class="btn primary">+ Agregar</a>
-      <a href="/doctor-schedules/create" class="btn" style="background:#28a745;color:#fff;">+ Agregar Masiva</a>
-    </div>
+    </div>    
   </div>
 </section>
 
@@ -83,10 +78,12 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
       <?php endfor; ?>
     </select>
 
-    <input id="filterInput" class="input" placeholder="Filtrar Registro en la Tabla" style="flex:1;" />
-    <button class="btn" type="submit">Actualizar</button>
+    <button class="btn" type="submit">Filtrar</button>
   </form>
-
+  <div>
+    <input id="filterInput" class="input" placeholder="Filtrar Registro en la Tabla" style="width:20%" />
+  </div>
+  
   <div style="margin:6px 0 12px;display:flex;justify-content:space-between;align-items:center;">
     <div><small class="muted">Items por página:</small>
       <select id="perPage" class="input" style="width:80px;display:inline-block;">
