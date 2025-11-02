@@ -802,62 +802,136 @@ class DoctorScheduleController
         $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
         $mesName = $months[$month] ?? null;
 
-        // Find patterns for this doctor/sede that match the requested month/year (or are global) and have no reserved slots
-        $query = DoctorSchedule::where('doctor_id', $doctorId)->whereNotNull('dia_semana');
+        // Find patterns for this doctor/sede. Keep compatibility with older logic:
+        // - if a sede is provided, include patterns for that sede OR global patterns (sede_id IS NULL)
+        // - for mes/anio scoping allow patterns that are general (mes NULL/empty) or match the requested month/year
+        $query = DoctorSchedule::where('doctor_id', $doctorId)
+            ->whereNotNull('dia_semana')
+            ->with(['doctor.user', 'sede']); // Eager load relationships
+
         if ($sedeId !== null) {
             $query->where(function($q) use ($sedeId) { $q->where('sede_id', $sedeId)->orWhereNull('sede_id'); });
         } else {
             $query->whereNull('sede_id');
         }
 
-        // month/year scoping: allow patterns that are global (mes NULL/empty) or match the requested month; year can be NULL or equal
-        $query->where(function($q) use ($mesName, $year) {
-            $q->whereNull('mes')->orWhere('mes', '')->orWhere('mes', $mesName);
-        });
-        $query->where(function($q) use ($year) {
-            $q->whereNull('anio')->orWhere('anio', $year);
-        });
-
-        // exclude patterns that have reserved slots
-        $query->whereNotIn('id', function($sub) {
-            $sub->select('horario_id')->from('slots_calendario')->whereNotNull('reservado_por_cita_id');
-        });
-
+        // Try to get any representative pattern (no month filter) for display purposes
         $pattern = $query->orderBy('hora_inicio')->first();
 
-        if ($pattern) {
-            // load horarios similarly but scoped to mes/anio
-            $q2 = DoctorSchedule::where('doctor_id', $doctorId)->whereNotNull('dia_semana');
-            if ($sedeId !== null) {
-                $q2->where(function($q) use ($sedeId) { $q->where('sede_id', $sedeId)->orWhereNull('sede_id'); });
-            } else {
-                $q2->whereNull('sede_id');
-            }
-            $q2->where(function($q) use ($mesName, $year) {
-                $q->whereNull('mes')->orWhere('mes','')->orWhere('mes', $mesName);
-            });
-            $q2->where(function($q) use ($year) {
-                $q->whereNull('anio')->orWhere('anio', $year);
-            });
-            $q2->whereNotIn('id', function($sub) {
-                $sub->select('horario_id')->from('slots_calendario')->whereNotNull('reservado_por_cita_id');
-            });
-            $horarios = $q2->orderBy('dia_semana')->orderBy('hora_inicio')->get();
+        // load horarios scoped to include both specific month/year and general patterns
+        $q2 = DoctorSchedule::where('doctor_id', $doctorId)
+            ->whereNotNull('dia_semana')
+            ->with(['doctor.user', 'sede']);
 
-            // Provide the selected mes/anio to the view via $pattern (pattern may already have mes/anio)
-            return $res->view('horarios_doctores/edit', [
-                'title' => 'Editar patrón',
-                'pattern' => $pattern,
-                'doctors' => Doctor::getAll(),
-                'sedes' => Sede::getAll(),
-                'horarios' => $horarios,
-            ]);
+        if ($sedeId !== null) {
+            $q2->where(function($q) use ($sedeId) { $q->where('sede_id', $sedeId)->orWhereNull('sede_id'); });
+        } else {
+            $q2->whereNull('sede_id');
         }
 
-        // No pattern for given criteria: redirect to create with doctor/sede/mes/anio
-        $qs = '?doctor_id=' . $doctorId . '&mes=' . $month . '&anio=' . $year;
-        if ($sedeId !== null) $qs .= '&sede_id=' . $sedeId;
-        return $res->redirect('/doctor-schedules/create' . $qs);
+        // month/year scoping: allow patterns that are global (mes NULL/empty) or match the requested month; year can be NULL or equal
+        // Be permissive with month name variants (lowercase, ucfirst, numeric) to match possible stored values
+        $mesLower = mb_strtolower($mesName ?? '');
+        $mesVariants = array_filter([ $mesLower, ucfirst($mesLower), strtoupper($mesLower), (string)$month ]);
+        $q2->where(function($q) use ($mesVariants) {
+            $q->whereNull('mes')->orWhere('mes', '')->orWhereIn('mes', $mesVariants);
+        });
+        $q2->where(function($q) use ($year) {
+            $q->whereNull('anio')->orWhere('anio', $year)->orWhere('anio', (string)$year);
+        });
+
+        $horarios = $q2->orderBy('dia_semana')->orderBy('hora_inicio')->get();
+
+        // Annotate each pattern with whether it has any reserved slots (appointments).
+        try {
+            foreach ($horarios as $h) {
+                $h->has_reserved_slots = false;
+                if (!empty($h->id)) {
+                    $h->has_reserved_slots = (bool) \App\Models\SlotCalendario::where('horario_id', (int)$h->id)
+                        ->whereNotNull('reservado_por_cita_id')
+                        ->exists();
+                }
+            }
+        } catch (\Throwable $e) {
+            // If anything fails, default to not reserved (don't block by accident)
+            foreach ($horarios as $h) { $h->has_reserved_slots = false; }
+        }
+
+        // If no representative pattern exists, build a minimal placeholder so the view can show doctor info
+        if (!$pattern) {
+            $doc = Doctor::find($doctorId);
+            if ($doc) {
+                $p = new \stdClass();
+                $p->doctor = $doc;
+                $pattern = $p;
+            }
+        }
+
+        // Also fetch concrete calendar entries for this doctor + month/year so user can see actual dates
+        $calendarsForMonth = [];
+        try {
+            $startDate = \DateTime::createFromFormat('Y-n-j', "{$year}-{$month}-1");
+            if (!$startDate) $startDate = new \DateTime("{$year}-{$month}-01");
+            $endDate = (clone $startDate)->modify('last day of this month');
+
+            $calendars = \App\Models\Calendario::with('horario')
+                ->where('doctor_id', $doctorId)
+                ->whereBetween('fecha', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->get();
+
+            foreach ($calendars as $c) {
+                // filter by sede if requested: keep if horario->sede_id == sedeId OR horario is null (no sede info)
+                $horarioRel = $c->horario;
+                $hSede = $horarioRel?->sede_id ?? null;
+                if ($sedeId !== null) {
+                    if ($hSede !== null && (int)$hSede !== (int)$sedeId) continue;
+                    if ($hSede === null) continue; // if calendar entry has no horario and user filtered by a specific sede, skip
+                }
+
+                $obj = new \stdClass();
+                $obj->id = 'cal_' . (int)$c->id;
+                // derive dia_semana key from fecha
+                $w = (int)date('N', strtotime($c->fecha));
+                $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6=>'sábado',7=>'domingo'];
+                $obj->dia_semana = $weekdayMap[$w] ?? '';
+                $obj->hora_inicio = $c->hora_inicio ? date('H:i', strtotime($c->hora_inicio)) : ($horarioRel?->hora_inicio ? date('H:i', strtotime($horarioRel->hora_inicio)) : '');
+                $obj->hora_fin = $c->hora_fin ? date('H:i', strtotime($c->hora_fin)) : ($horarioRel?->hora_fin ? date('H:i', strtotime($horarioRel->hora_fin)) : '');
+                $obj->sede_id = $hSede;
+                $obj->sede = $horarioRel?->sede ?? null;
+                $obj->observaciones = $c->motivo ?? '';
+                $obj->is_calendar = true;
+                $obj->fecha = $c->fecha;
+                $calendarsForMonth[] = $obj;
+            }
+        } catch (\Throwable $e) {
+            error_log('[editByDoctorSedeMonth] calendars fetch error: ' . $e->getMessage());
+        }
+
+        // Merge pattern-based horarios (editable) and calendar concrete entries (read-only) into a single array for the view
+        $mergedHorarios = [];
+        foreach ($horarios as $h) $mergedHorarios[] = $h;
+        foreach ($calendarsForMonth as $ch) $mergedHorarios[] = $ch;
+
+        // Debug log: count of horarios returned (temporary, safe to remove later)
+        try {
+            $ids = array_map(function($h){ return (string)($h->id ?? ''); }, $mergedHorarios);
+            error_log('[editByDoctorSedeMonth] doctor=' . $doctorId . ' sede=' . ($sedeId ?? 'NULL') . ' month=' . $month . ' year=' . $year . ' horarios_count=' . count($ids) . ' ids=' . implode(',', $ids));
+        } catch (\Throwable $e) {
+            error_log('[editByDoctorSedeMonth] error building debug log: ' . $e->getMessage());
+        }
+
+        // Provide all necessary data to the view (do not redirect)
+        return $res->view('horarios_doctores/edit', [
+            'title' => 'Editar patrón',
+            'pattern' => $pattern,
+            'doctors' => Doctor::getAll(),
+            'sedes' => Sede::getAll(),
+            'horarios' => $mergedHorarios,
+            'selectedMes' => $month,
+            'selectedAnio' => $year,
+            'doctorId' => $doctorId,
+            'sedeId' => $sedeId
+        ]);
     }
 
     /**
@@ -872,63 +946,92 @@ class DoctorScheduleController
             return $res->abort(419, 'CSRF inválido');
         }
 
-        $id = (int)($req->params['id'] ?? 0);
+    $id = (int)($req->params['id'] ?? 0);
+    $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest';
         if ($id <= 0) return $res->redirect('/doctor-schedules');
 
         $doctorId = (int)($_POST['doctor_id'] ?? 0);
         $sedeId = (int)($_POST['sede_id'] ?? 0) ?: null;
     $postedMes = isset($_POST['mes']) ? (int)$_POST['mes'] : null;
     $postedAnio = isset($_POST['anio']) ? (int)$_POST['anio'] : null;
-        $diaSemana = mb_strtolower(trim((string)($_POST['dia_semana'] ?? '')));
-        $horaInicio = trim((string)($_POST['hora_inicio'] ?? ''));
-        $horaFin = trim((string)($_POST['hora_fin'] ?? ''));
-        $observaciones = trim((string)($_POST['observaciones'] ?? ''));
-        $activo = isset($_POST['activo']) && (int)$_POST['activo'] === 1 ? 1 : 0;
+
+        // Detect if the request submitted nested horarios (horarios[<id>][...])
+        $postedHorarios = $_POST['horarios'] ?? null;
+        if (is_array($postedHorarios) && count($postedHorarios) > 0) {
+            // We'll handle validation for each horario in the bulk branch below.
+            // Set these single-item vars to null to avoid single-update validation running.
+            $diaSemana = null;
+            $horaInicio = null;
+            $horaFin = null;
+            $observaciones = null;
+            $activo = 0;
+        } else {
+            $diaSemana = mb_strtolower(trim((string)($_POST['dia_semana'] ?? '')));
+            $horaInicio = trim((string)($_POST['hora_inicio'] ?? ''));
+            $horaFin = trim((string)($_POST['hora_fin'] ?? ''));
+            $observaciones = trim((string)($_POST['observaciones'] ?? ''));
+            $activo = isset($_POST['activo']) && (int)$_POST['activo'] === 1 ? 1 : 0;
+        }
 
         $diasValidos = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo','miercoles','sabado'];
-        if ($doctorId <= 0 || !$diaSemana || !$horaInicio || !$horaFin) {
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'Completa todos los campos obligatorios.',
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
-        }
+        // If bulk horarios were posted, skip single-item validation below and handle in bulk branch
+        if (empty($postedHorarios)) {
+            if ($doctorId <= 0 || !$diaSemana || !$horaInicio || !$horaFin) {
+                $msg = 'Completa todos los campos obligatorios.';
+                if ($isAjax) {
+                    // DEBUG: return the posted keys to help client-side debugging of FormData/field names
+                    $keys = array_keys($_POST);
+                    return $res->json(['success'=>false,'error'=>$msg,'posted_keys'=>$keys], 400);
+                }
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>$msg,
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
 
-        if (!in_array($diaSemana, $diasValidos, true)) {
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'Día de la semana inválido.',
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
-        }
+            if (!in_array($diaSemana, $diasValidos, true)) {
+                $msg = 'Día de la semana inválido.';
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 400);
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>$msg,
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
 
-        $timeRe = '/^([01]\d|2[0-3]):[0-5]\d$/';
-        if (!preg_match($timeRe, $horaInicio) || !preg_match($timeRe, $horaFin)) {
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'Formato de hora inválido. Usa HH:MM.',
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
-        }
+            $timeRe = '/^([01]\d|2[0-3]):[0-5]\d$/';
+            if (!preg_match($timeRe, $horaInicio) || !preg_match($timeRe, $horaFin)) {
+                $msg = 'Formato de hora inválido. Usa HH:MM.';
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 400);
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>$msg,
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
 
-        if (strtotime($horaInicio) >= strtotime($horaFin) || ((strtotime($horaFin)-strtotime($horaInicio))/60) < 15) {
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'La hora inicio debe ser menor que la hora fin y con al menos 15 minutos.',
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
+            if (strtotime($horaInicio) >= strtotime($horaFin) || ((strtotime($horaFin)-strtotime($horaInicio))/60) < 15) {
+                $msg = 'La hora inicio debe ser menor que la hora fin y con al menos 15 minutos.';
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 400);
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>$msg,
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
         }
 
         // Validar solapamiento usando la nueva lógica
@@ -947,21 +1050,24 @@ class DoctorScheduleController
             $anio = (int)$pattern->anio;
         }
         
-        if (DoctorSchedule::patternsOverlap($doctorId, $sedeId, $diaSemana, $horaInicio, $horaFin, $mes, $anio, $id)) {
-            return $res->view('horarios_doctores/edit', [
-                'title'=>'Editar patrón',
-                'error'=>'Este rango de horario se solapa con otro patrón existente. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.',
-                'pattern'=>DoctorSchedule::find($id),
-                'doctors'=>Doctor::getAll(),
-                'sedes'=>Sede::getAll(),
-                'old'=>$_POST
-            ]);
+        if (empty($postedHorarios)) {
+            if (DoctorSchedule::patternsOverlap($doctorId, $sedeId, $diaSemana, $horaInicio, $horaFin, $mes, $anio, $id)) {
+                $msg = 'Este rango de horario se solapa con otro patrón existente. Un doctor puede tener múltiples horarios en el mismo día siempre que no se solapen.';
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 400);
+                return $res->view('horarios_doctores/edit', [
+                    'title'=>'Editar patrón',
+                    'error'=>$msg,
+                    'pattern'=>DoctorSchedule::find($id),
+                    'doctors'=>Doctor::getAll(),
+                    'sedes'=>Sede::getAll(),
+                    'old'=>$_POST
+                ]);
+            }
         }
 
-        // If the form submitted bulk horarios (multiple rows) handle them
-        $pdo = Database::pdo();
-        $postedHorarios = $_POST['horarios'] ?? null;
-        if (is_array($postedHorarios) && count($postedHorarios) > 0) {
+    // If the form submitted bulk horarios (multiple rows) handle them
+    $pdo = Database::pdo();
+    if (is_array($postedHorarios) && count($postedHorarios) > 0) {
             try {
                 $pdo->beginTransaction();
                 $mainPattern = DoctorSchedule::find($id);
@@ -1009,19 +1115,18 @@ class DoctorScheduleController
                     $sch->hora_fin = $hFin;
                     $sch->sede_id = $sedeVal ?: null;
                     $sch->observaciones = $obsVal;
-                    // Only update 'activo' if the field was present in the submitted data.
-                    if (array_key_exists('activo', $vals)) {
-                        $sch->activo = (bool)$activoVal;
-                    }
+                    $sch->activo = (bool)$activoVal;
                     $sch->save();
                 }
 
                 $pdo->commit();
             } catch (\Throwable $e) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
+                $msg = 'Error al guardar: ' . $e->getMessage();
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 500);
                 return $res->view('horarios_doctores/edit', [
                     'title'=>'Editar patrón',
-                    'error'=>'Error al guardar: ' . $e->getMessage(),
+                    'error'=>$msg,
                     'pattern'=>DoctorSchedule::find($id),
                     'doctors'=>Doctor::getAll(),
                     'sedes'=>Sede::getAll(),
@@ -1051,9 +1156,11 @@ class DoctorScheduleController
                 $pdo->commit();
             } catch (\Throwable $e) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
+                $msg = 'Error al guardar: ' . $e->getMessage();
+                if ($isAjax) return $res->json(['success'=>false,'error'=>$msg], 500);
                 return $res->view('horarios_doctores/edit', [
                     'title'=>'Editar patrón',
-                    'error'=>'Error al guardar: ' . $e->getMessage(),
+                    'error'=>$msg,
                     'pattern'=>DoctorSchedule::find($id),
                     'doctors'=>Doctor::getAll(),
                     'sedes'=>Sede::getAll(),
@@ -1063,6 +1170,7 @@ class DoctorScheduleController
         }
 
         $_SESSION['flash'] = ['success' => 'Patrón actualizado'];
+        if ($isAjax) return $res->json(['success'=>true,'message'=>'Patrón actualizado'], 200);
         return $res->redirect('/doctor-schedules');
     }
 

@@ -326,8 +326,56 @@ class DoctorSchedule extends BaseModel
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
         }
+        // Additional rule: Prevent creation/update of an identical pattern (same day + same start/end)
+        // for the same doctor regardless of sede. This ensures you cannot have two patterns with the
+        // same doctor, dia_semana, hora_inicio, hora_fin, mes and anio even if they belong to different sedes.
+        // excludeId is honored so updating the same record won't conflict with itself.
+        try {
+            $dupQuery = static::where('doctor_id', $doctorId)
+                              ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+                              ->where('hora_inicio', $start)
+                              ->where('hora_fin', $end)
+                              ->active();
 
-        // Time overlap clause: fetch candidates and perform strict PHP comparison to avoid DB edge-case mismatches
+            if ($mes !== null && trim((string)$mes) !== '') {
+                $m = mb_strtolower(trim((string)$mes));
+                $dupQuery->where(function($q) use ($m, $anio) {
+                    $q->where(function($q2) use ($m, $anio) {
+                        $q2->where('mes', $m);
+                        if ($anio !== null && (int)$anio > 0) {
+                            $q2->where(function($q3) use ($anio) {
+                                $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                            });
+                        }
+                    })->orWhere(function($q4) {
+                        $q4->whereNull('mes')->orWhere('mes', '');
+                    });
+                });
+            } else {
+                $dupQuery->where(function($q){ $q->whereNull('mes')->orWhere('mes',''); });
+            }
+            if ($excludeId) $dupQuery->where('id', '!=', $excludeId);
+
+            if ($dupQuery->exists()) {
+                return true;
+            }
+        } catch (\Throwable $_e) {
+            // ignore duplicate-check failures and continue to overlap checks
+        }
+
+        // DB-level time overlap check: quickly detect any existing pattern with hora_inicio < new_end
+        // AND hora_fin > new_start using the same scoping (doctor, normalized day, mes/anio, sede scoping).
+        try {
+            $timeQuery = clone $query;
+            $timeQuery->where('hora_inicio', '<', $end)->where('hora_fin', '>', $start);
+            if ($timeQuery->exists()) {
+                return true;
+            }
+        } catch (\Throwable $_e) {
+            // If DB-level check fails, fall back to PHP candidate scanning below.
+        }
+
+        // Fall back: fetch candidates and perform strict PHP comparison to avoid DB edge-case mismatches
         $candidates = $query->get();
 
         $tNewStart = static::timeToSeconds($start);
@@ -371,6 +419,7 @@ class DoctorSchedule extends BaseModel
                 return true;
             }
         }
+
         // If no candidates produced a conflict, return false
         return false;
     }
