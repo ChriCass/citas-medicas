@@ -102,46 +102,6 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
     </select>
   </div>
 
-  <div class="row compact" style="min-width:220px;">
-    <label class="label">Sede</label>
-    <select id="sede_top" class="input" style="width:100%;">
-      <option value="">-- Cualquier sede --</option>
-      <?php foreach (($sedes ?? []) as $s): ?>
-        <option value="<?= (int)$s->id ?>" <?= ((string)($selectedSede ?? '') === (string)$s->id) ? 'selected' : '' ?>><?= htmlspecialchars($s->nombre_sede ?? $s->nombre ?? '') ?></option>
-      <?php endforeach; ?>
-    </select>
-  </div>
-
-  <div class="row compact" style="min-width:180px;">
-    <label class="label">Mes</label>
-    <select name="mes" id="mes" class="input" required style="width:140px;">
-      <?php
-        $months = [1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'];
-        $now = (int)date('n');
-        if ($now === 12) {
-          $available = $months;
-        } else {
-          $available = [];
-          for ($m = $now; $m <= 12; $m++) { $available[$m] = $months[$m]; }
-        }
-        foreach ($available as $num => $name):
-      ?>
-        <option value="<?= $num ?>" <?= ((int)$selectedMes === (int)$num) ? 'selected' : '' ?>><?= htmlspecialchars($name) ?></option>
-      <?php endforeach; ?>
-    </select>
-  </div>
-  <div class="row compact" style="min-width:120px;">
-    <label class="label">Año</label>
-    <select name="anio" id="anio" class="input" required style="width:120px;">
-      <?php
-        $now = (int)date('n');
-        $currentYear = (int)date('Y');
-        $nextYear = $currentYear + 1;
-        $usedYear = ($now === 12 && $selectedMes !== 12) ? $nextYear : $selectedAnio;
-      ?>
-      <option value="<?= $usedYear ?>" selected><?= $usedYear ?></option>
-    </select>
-  </div>
 </div>
 
 <h3 style="margin: 24px 0 16px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;">Horarios del doctor / sede</h3>
@@ -152,6 +112,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
       <table class="table" style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background: #f8f9fa;">
+            <th style="text-align:left;padding:12px;font-weight:600;border:1px solid #dee2e6;">Mes</th>
             <th style="text-align:left;padding:12px;font-weight:600;border:1px solid #dee2e6;">Día de la semana</th>
             <th style="text-align:left;padding:12px;font-weight:600;border:1px solid #dee2e6;">Sede</th>
             <th style="text-align:left;padding:12px;font-weight:600;border:1px solid #dee2e6;">Hora inicio (24h)</th>
@@ -180,6 +141,8 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
             }
 
             if (!empty($patternHorarios)):
+              // cache for doctor->sedes to avoid repeated queries
+              $doctorSedesCache = [];
               foreach ($patternHorarios as $h):
                   $horarioId = (int)$h->id;
                   $dayKey = mb_strtolower(trim((string)$h->dia_semana));
@@ -187,6 +150,14 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
                   $endTime = _fmtTime($h->hora_fin ?? null);
                   $sedeId = $h->sede_id ?? null;
                   $observaciones = $h->observaciones ?? '';
+                  // Determine mes number for this pattern: prefer pattern->mes, fall back to selectedMes
+                  $rowMes = null;
+                  if (!empty($h->mes)) {
+                    // $monthsMap defined at top maps 1=>'enero'...; try to find numeric index
+                    $found = array_search(mb_strtolower((string)$h->mes), array_map('mb_strtolower', $monthsMap));
+                    $rowMes = ($found === false) ? null : (int)$found;
+                  }
+                  if (!$rowMes) $rowMes = (int)($selectedMes ?? date('n'));
           ?>
               <?php $blocked = !empty($h->has_reserved_slots); $disabledAttr = $blocked ? 'disabled' : ''; ?>
             <tr class="<?= $blocked ? 'blocked-row' : '' ?>" style="border:1px solid #dee2e6;">
@@ -198,6 +169,25 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
                 <input type="hidden" name="horarios[<?= $horarioId ?>][activo]" value="1">
                 
                 <td style="padding:8px;vertical-align:middle;border:1px solid #dee2e6;">
+                  <?php
+                    $monthsDisplay = [1=>'Enero',2=>'Febrero',3=>'Marzo',4=>'Abril',5=>'Mayo',6=>'Junio',7=>'Julio',8=>'Agosto',9=>'Septiembre',10=>'Octubre',11=>'Noviembre',12=>'Diciembre'];
+                    // Only allow current month and following months
+                    $nowMonth = (int)date('n');
+                    $allowedMonths = [];
+                    if ($nowMonth === 12) {
+                      $allowedMonths = $monthsDisplay;
+                    } else {
+                      for ($mm = $nowMonth; $mm <= 12; $mm++) { $allowedMonths[$mm] = $monthsDisplay[$mm]; }
+                    }
+                  ?>
+                  <select name="horarios[<?= $horarioId ?>][mes]" class="input mes-select" style="width:100%;" <?= $disabledAttr ?> >
+                    <option value="">— Mes —</option>
+                    <?php foreach ($allowedMonths as $mnum => $mname): ?>
+                      <option value="<?= $mnum ?>" <?= ((int)$rowMes === (int)$mnum) ? 'selected' : '' ?>><?= htmlspecialchars($mname) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </td>
+                <td style="padding:8px;vertical-align:middle;border:1px solid #dee2e6;">
                   <select name="horarios[<?= $horarioId ?>][dia_semana]" class="input day-select" required style="width:100%;" <?= $disabledAttr ?> >
                     <option value="">— Selecciona día —</option>
                     <?php foreach ($daysOpts as $optKey => $optLabel): ?>
@@ -208,10 +198,20 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
                 <td style="padding:8px;vertical-align:middle;border:1px solid #dee2e6;">
                   <select name="horarios[<?= $horarioId ?>][sede_id]" class="input sede-select" style="width:100%;" <?= $disabledAttr ?> >
                     <option value="">— Cualquier sede —</option>
-                    <?php foreach (($sedes ?? []) as $s): ?>
-                      <option value="<?= (int)$s->id ?>" <?= ((string)$sedeId === (string)$s->id) ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($s->nombre_sede ?? $s->nombre ?? '') ?>
-                      </option>
+                    <?php
+                      $docIdForSedes = (int)($h->doctor_id ?? $doctorId);
+                      if (!isset($doctorSedesCache[$docIdForSedes])) {
+                        try {
+                          $dobj = \App\Models\Doctor::where('id', $docIdForSedes)->with('sedes')->first();
+                          $doctorSedesCache[$docIdForSedes] = $dobj?->sedes ?? [];
+                        } catch (\Throwable $_e) {
+                          $doctorSedesCache[$docIdForSedes] = [];
+                        }
+                      }
+                      $assignedSedes = $doctorSedesCache[$docIdForSedes] ?? [];
+                    ?>
+                    <?php foreach ($assignedSedes as $s): ?>
+                      <option value="<?= (int)$s->id ?>" <?= ((string)$sedeId === (string)$s->id) ? 'selected' : '' ?>><?= htmlspecialchars($s->nombre_sede ?? $s->nombre ?? '') ?></option>
                     <?php endforeach; ?>
                   </select>
                 </td>
@@ -254,7 +254,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
             else:
           ?>
             <tr>
-              <td colspan="6" style="padding:16px;text-align:center;color:#6c757d;border:1px solid #dee2e6;">
+              <td colspan="7" style="padding:16px;text-align:center;color:#6c757d;border:1px solid #dee2e6;">
                 No hay horarios definidos para este doctor/sede/mes.
               </td>
             </tr>

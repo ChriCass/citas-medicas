@@ -1067,6 +1067,91 @@ class DoctorScheduleController
 
     // If the form submitted bulk horarios (multiple rows) handle them
     $pdo = Database::pdo();
+    // helper closure: regenerate calendario and slots for a given horario id, mes and anio
+    $regenerateForHorario = function($pdo, $horarioId, $doctorId, $mesNumber, $anio) {
+        // mesNumber: 1..12 or null -> if null, nothing to generate
+        if (!$mesNumber || $mesNumber < 1 || $mesNumber > 12) return 0;
+
+        $months = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+        $mesName = $months[$mesNumber] ?? null;
+
+        // Compute year fallback
+        $nowMonth = (int)date('n');
+        $currentYear = (int)date('Y');
+        if (!$anio || $anio < 1970) {
+            $anio = $currentYear;
+            if ($nowMonth === 12 && $mesNumber !== 12) $anio = $currentYear + 1;
+        }
+
+        $start = \DateTime::createFromFormat('Y-n-j', "{$anio}-{$mesNumber}-1");
+        if (!$start) $start = new \DateTime("{$anio}-{$mesNumber}-01");
+        $end = (clone $start)->modify('last day of this month');
+
+        // If target month/year is current month/year, start from tomorrow
+        $today = new \DateTime();
+        $nowYear = (int)$today->format('Y');
+        $nowMonth = (int)$today->format('n');
+        if ($anio === $nowYear && $mesNumber === $nowMonth) {
+            $tomorrow = (clone $today)->modify('+1 day')->setTime(0,0,0);
+            if ($tomorrow <= $end) $start = $tomorrow;
+            else return 0; // nothing to generate
+        }
+
+        $created = 0; $slotsCreated = 0; $skippedHolidays = 0;
+
+        // Load pattern once
+        $pattern = \App\Models\DoctorSchedule::find((int)$horarioId);
+        if (!$pattern) return 0;
+
+        $current = clone $start;
+        while ($current <= $end) {
+            $weekday = (int)$current->format('N');
+            // map day name to number from pattern
+            $map = ['lunes'=>1,'martes'=>2,'miércoles'=>3,'miercoles'=>3,'jueves'=>4,'viernes'=>5,'sábado'=>6,'sabado'=>6,'domingo'=>7];
+            $patternDay = $map[mb_strtolower(trim((string)$pattern->dia_semana))] ?? null;
+            if ($patternDay !== $weekday) { $current->modify('+1 day'); continue; }
+
+            $fecha = $current->format('Y-m-d');
+
+            // Check feriados
+            $feriados = [];
+            try {
+                $stmt = $pdo->prepare('SELECT id, fecha, tipo, activo, sede_id FROM feriados WHERE fecha = :f');
+                $stmt->execute([':f' => $fecha]);
+                $feriados = $stmt->fetchAll();
+            } catch (\Throwable $e) { $feriados = []; }
+
+            $isFeriado = false;
+            if (!empty($feriados)) {
+                $patternSedeId = $pattern->sede_id ?? null;
+                foreach ($feriados as $fer) {
+                    $activo = $fer['activo'];
+                    $activoFlag = ($activo === null) ? true : (bool)$activo;
+                    if (!$activoFlag) continue;
+                    if ($fer['sede_id'] === null || $fer['sede_id'] === '') { $isFeriado = true; break; }
+                    if ($patternSedeId !== null && ((int)$fer['sede_id'] === (int)$patternSedeId)) { $isFeriado = true; break; }
+                }
+            }
+            if ($isFeriado) { $skippedHolidays++; $current->modify('+1 day'); continue; }
+
+            // Create calendario entry
+            $baseStart = $pattern->hora_inicio ? date('H:i', strtotime($pattern->hora_inicio)) : null;
+            $baseEnd = $pattern->hora_fin ? date('H:i', strtotime($pattern->hora_fin)) : null;
+
+            $calId = \App\Models\Calendario::createEntry($pattern->doctor_id, $pattern->id, $fecha, $baseStart, $baseEnd);
+            $created++;
+
+            if ($baseStart && $baseEnd) {
+                $n = \App\Models\SlotCalendario::createSlots($calId, $pattern->id, $baseStart, $baseEnd, 15);
+                $slotsCreated += $n;
+            }
+
+            $current->modify('+1 day');
+        }
+
+        return $created;
+    };
+
     if (is_array($postedHorarios) && count($postedHorarios) > 0) {
             try {
                 $pdo->beginTransaction();
@@ -1076,6 +1161,7 @@ class DoctorScheduleController
                 // Iterate posted horarios: expected structure horarios[<id>][field]
                 $timeRe = '/^([01]\d|2[0-3]):[0-5]\d$/';
                 $diasValidos = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo','miercoles','sabado'];
+                $updatedPatternIds = [];
                 foreach ($postedHorarios as $hid => $vals) {
                     $hid = (int)$hid;
                     if ($hid <= 0) continue;
@@ -1117,6 +1203,38 @@ class DoctorScheduleController
                     $sch->observaciones = $obsVal;
                     $sch->activo = (bool)$activoVal;
                     $sch->save();
+                    // collect updated ids to later remove/regenerate calendario/slots
+                    $updatedPatternIds[] = (int)$hid;
+                }
+
+                // For each updated pattern, delete calendario and slots and regenerate for provided mes/anio (if any)
+                if (!empty($updatedPatternIds)) {
+                    foreach ($updatedPatternIds as $upId) {
+                        // delete existing slots and calendario entries for this horario
+                        $stmt = $pdo->prepare('DELETE FROM slots_calendario WHERE horario_id = :hid');
+                        $stmt->execute([':hid' => $upId]);
+                        $stmt2 = $pdo->prepare('DELETE FROM calendario WHERE horario_id = :hid');
+                        $stmt2->execute([':hid' => $upId]);
+
+                        // Determine month/year to regenerate: prefer postedMes/postedAnio, else use pattern values
+                        $useMes = $postedMes ?: null;
+                        $useAnio = $postedAnio ?: null;
+                        if (!$useMes) {
+                            $p = DoctorSchedule::find($upId);
+                            if ($p && !empty($p->mes)) {
+                                // try to map text month to number
+                                $monthsMap = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+                                $found = array_search(mb_strtolower((string)$p->mes), array_map('mb_strtolower', $monthsMap));
+                                if ($found !== false) $useMes = (int)$found;
+                            }
+                            if ($p && !empty($p->anio)) $useAnio = (int)$p->anio;
+                        }
+
+                        // Regenerate calendar entries for this horario (if a month was determined)
+                        if ($useMes) {
+                            $regenerateForHorario($pdo, $upId, $mainPattern->doctor_id, (int)$useMes, $useAnio);
+                        }
+                    }
                 }
 
                 $pdo->commit();
@@ -1152,6 +1270,30 @@ class DoctorScheduleController
                 if (isset($mes)) $pattern->mes = $mes;
                 if (isset($anio)) $pattern->anio = $anio;
                 $pattern->save();
+
+                // Once the horario pattern is updated, remove any existing calendario/slots for it
+                try {
+                    $stmt = $pdo->prepare('DELETE FROM slots_calendario WHERE horario_id = :hid');
+                    $stmt->execute([':hid' => $pattern->id]);
+                    $stmt2 = $pdo->prepare('DELETE FROM calendario WHERE horario_id = :hid');
+                    $stmt2->execute([':hid' => $pattern->id]);
+                } catch (\Throwable $_ex) {
+                    throw new \RuntimeException('Error al limpiar registros anteriores: ' . $_ex->getMessage());
+                }
+
+                // Regenerate calendario/slots for the target month/year (prefer postedMes/postedAnio, else pattern values)
+                $useMes = $postedMes ?: null;
+                $useAnio = $postedAnio ?: null;
+                if (!$useMes && !empty($pattern->mes)) {
+                    $monthsMap = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+                    $found = array_search(mb_strtolower((string)$pattern->mes), array_map('mb_strtolower', $monthsMap));
+                    if ($found !== false) $useMes = (int)$found;
+                }
+                if (!$useAnio && !empty($pattern->anio)) $useAnio = (int)$pattern->anio;
+
+                if ($useMes) {
+                    $regenerateForHorario($pdo, $pattern->id, $pattern->doctor_id, (int)$useMes, $useAnio);
+                }
 
                 $pdo->commit();
             } catch (\Throwable $e) {
