@@ -209,7 +209,7 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
         if ($patternId) {
           $acciones .= '<form method="POST" action="/doctor-schedules/' . (int)$patternId . '/delete" style="display:inline-block;margin:0;padding:0;">'
             . '<input type="hidden" name="_csrf" value="' . htmlspecialchars(\App\Core\Csrf::token()) . '">'
-            . '<button type="submit" onclick="return confirm(\'¿Eliminar este horario?\')" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
+            . '<button type="submit" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
             . '</form>';
         }
 

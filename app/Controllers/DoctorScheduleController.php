@@ -1202,6 +1202,23 @@ class DoctorScheduleController
                     $sch->sede_id = $sedeVal ?: null;
                     $sch->observaciones = $obsVal;
                     $sch->activo = (bool)$activoVal;
+                    // Handle per-row mes/anio (mes may be numeric from the select)
+                    if (isset($vals['mes']) && $vals['mes'] !== '') {
+                        $mnum = (int)$vals['mes'];
+                        $monthsMapLocal = [1=>'enero',2=>'febrero',3=>'marzo',4=>'abril',5=>'mayo',6=>'junio',7=>'julio',8=>'agosto',9=>'septiembre',10=>'octubre',11=>'noviembre',12=>'diciembre'];
+                        if (isset($monthsMapLocal[$mnum])) {
+                            $sch->mes = mb_strtolower($monthsMapLocal[$mnum]);
+                        }
+                    } else {
+                        // if empty string provided, clear mes
+                        if (array_key_exists('mes', $vals)) $sch->mes = null;
+                    }
+                    if (isset($vals['anio']) && is_numeric($vals['anio']) && (int)$vals['anio'] >= 1970) {
+                        $sch->anio = (int)$vals['anio'];
+                    } elseif (array_key_exists('anio', $vals) && ($vals['anio'] === '' || $vals['anio'] === null)) {
+                        $sch->anio = null;
+                    }
+
                     $sch->save();
                     // collect updated ids to later remove/regenerate calendario/slots
                     $updatedPatternIds[] = (int)$hid;
@@ -1216,9 +1233,21 @@ class DoctorScheduleController
                         $stmt2 = $pdo->prepare('DELETE FROM calendario WHERE horario_id = :hid');
                         $stmt2->execute([':hid' => $upId]);
 
-                        // Determine month/year to regenerate: prefer postedMes/postedAnio, else use pattern values
-                        $useMes = $postedMes ?: null;
-                        $useAnio = $postedAnio ?: null;
+                        // Determine month/year to regenerate: prefer per-row posted `horarios[<id>][mes]`,
+                        // then postedMes/postedAnio, else use pattern values
+                        $useMes = null;
+                        $useAnio = null;
+                        // prefer per-row value when available
+                        if (is_array($postedHorarios) && isset($postedHorarios[(string)$upId]['mes']) && is_numeric($postedHorarios[(string)$upId]['mes'])) {
+                            $useMes = (int)$postedHorarios[(string)$upId]['mes'];
+                        } elseif ($postedMes) {
+                            $useMes = $postedMes;
+                        }
+                        if (is_array($postedHorarios) && isset($postedHorarios[(string)$upId]['anio']) && is_numeric($postedHorarios[(string)$upId]['anio'])) {
+                            $useAnio = (int)$postedHorarios[(string)$upId]['anio'];
+                        } elseif ($postedAnio) {
+                            $useAnio = $postedAnio;
+                        }
                         if (!$useMes) {
                             $p = DoctorSchedule::find($upId);
                             if ($p && !empty($p->mes)) {
