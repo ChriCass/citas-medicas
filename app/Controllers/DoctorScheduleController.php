@@ -658,8 +658,63 @@ class DoctorScheduleController
         }
 
         $id = (int)($req->params['id'] ?? 0);
-        if ($id>0) DoctorSchedule::delete($id);
-        return $res->redirect('/doctor-schedules');
+        if ($id <= 0) return $res->redirect('/doctor-schedules');
+
+        // Preparar datos para redirección posterior
+        $schedule = DoctorSchedule::find($id);
+        $redirectDoctor = $schedule?->doctor_id ?? null;
+        $redirectSede = $schedule?->sede_id ?? 0;
+        // Preferir mes/anio enviados por el formulario (si existen), luego los del patrón, luego valores por defecto
+        $postedMes = isset($_POST['mes']) ? (int)$_POST['mes'] : null;
+        $postedAnio = isset($_POST['anio']) ? (int)$_POST['anio'] : null;
+
+        $targetMonth = $postedMes ?: (int)($schedule?->mes ?? date('n'));
+        $targetYear = $postedAnio ?: (int)($schedule?->anio ?? date('Y'));
+
+        // Ejecutar operación en transacción: eliminar slots_calendario, calendario y el horario
+        $pdo = \App\Core\Database::pdo();
+        $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest';
+
+        try {
+            $pdo->beginTransaction();
+
+            // Borrar slots asociados (si existen)
+            $stmt = $pdo->prepare('DELETE FROM slots_calendario WHERE horario_id = :id');
+            $stmt->execute([':id' => $id]);
+
+            // Borrar entradas en calendario asociadas al horario
+            $stmt = $pdo->prepare('DELETE FROM calendario WHERE horario_id = :id');
+            $stmt->execute([':id' => $id]);
+
+            // Borrar el patrón de horarios_medicos
+            $stmt = $pdo->prepare('DELETE FROM horarios_medicos WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+
+            $pdo->commit();
+
+            // Responder según tipo de petición
+            if ($isAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['message' => 'Horario eliminado correctamente.']);
+                return null;
+            }
+
+            $_SESSION['flash'] = ['success' => 'Horario eliminado correctamente'];
+            // Redirigir a la vista del doctor/sede/mes/anio (usar 0 para sede nula)
+            $sedeForUrl = $redirectSede === null ? 0 : (int)$redirectSede;
+            return $res->redirect('/doctor-schedules/' . (int)$redirectDoctor . '/' . $sedeForUrl . '/' . (int)$targetMonth . '/' . (int)$targetYear);
+        } catch (\Throwable $e) {
+            try { $pdo->rollBack(); } catch (\Throwable $_) {}
+            // Si es AJAX, responder con JSON error
+            if ($isAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                http_response_code(500);
+                echo json_encode(['error' => 'Error al eliminar: ' . $e->getMessage()]);
+                return null;
+            }
+            $_SESSION['flash'] = ['error' => 'Error al eliminar horario: ' . $e->getMessage()];
+            return $res->redirect('/doctor-schedules');
+        }
     }
 
     /**
@@ -921,7 +976,7 @@ class DoctorScheduleController
         }
 
         // Provide all necessary data to the view (do not redirect)
-        return $res->view('horarios_doctores/edit', [
+        $viewData = [
             'title' => 'Editar patrón',
             'pattern' => $pattern,
             'doctors' => Doctor::getAll(),
@@ -931,7 +986,16 @@ class DoctorScheduleController
             'selectedAnio' => $year,
             'doctorId' => $doctorId,
             'sedeId' => $sedeId
-        ]);
+        ];
+
+        // Si se solicita modo eliminación via querystring (?mode=delete), renderizar la vista delete.php
+        if (isset($_GET['mode']) && $_GET['mode'] === 'delete') {
+            // Ajustar título para la vista de eliminación
+            $viewData['title'] = 'Eliminar patrón';
+            return $res->view('horarios_doctores/delete', $viewData);
+        }
+
+        return $res->view('horarios_doctores/edit', $viewData);
     }
 
     /**

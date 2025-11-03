@@ -206,11 +206,11 @@ $weekdayMap = [1=>'lunes',2=>'martes',3=>'miércoles',4=>'jueves',5=>'viernes',6
         $acciones = '<div style="display:flex;gap:4px;justify-content:center;">'
           . '<a href="' . $editUrl . '" style="background:#28a745;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Editar">✎</a>';
 
+        // Usar un enlace (no <form>) para abrir la vista de eliminación. La vista DELETE debe
+        // mostrarse desde el controlador cuando se detecte ?mode=delete en la URL.
         if ($patternId) {
-          $acciones .= '<form method="POST" action="/doctor-schedules/' . (int)$patternId . '/delete" style="display:inline-block;margin:0;padding:0;">'
-            . '<input type="hidden" name="_csrf" value="' . htmlspecialchars(\App\Core\Csrf::token()) . '">'
-            . '<button type="submit" style="background:#ff0063;color:#fff;border:none;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Eliminar">🗑</button>'
-            . '</form>';
+          $deleteViewUrl = $editUrl . '?mode=delete';
+          $acciones .= '<a href="' . $deleteViewUrl . '" style="background:#ff0063;color:#fff;border-radius:4px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;" title="Eliminar">🗑</a>';
         }
 
         $acciones .= '</div>';

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 header('Content-Type: text/html; charset=utf-8');
-// Vista: formulario para EDITAR HORARIOS semanales 
+// Vista: formulario para ELIMINAR HORARIOS semanales (basada en edit.php)
 // Espera: $title, $pattern, $doctors, $sedes, $horarios, $error (opcional) y $old (opcional)
 $role = $_SESSION['user']['rol'] ?? '';
 $pattern = $pattern ?? null;
@@ -104,7 +104,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
 
 </div>
 
-<h3 style="margin: 24px 0 16px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;">Horarios del doctor / sede</h3>
+<h3 style="margin: 24px 0 16px 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px;">Horarios del doctor / sede — Eliminar</h3>
 
   <!-- Tabla de horarios existentes -->
   <div class="row">
@@ -242,8 +242,9 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
                       🔒 Bloqueado
                     </button>
                   <?php else: ?>
-                      <button type="button" class="btn primary ajax-save" data-action="/doctor-schedules/<?= $horarioId ?>/update" style="background:#28a745;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;">
-                        Guardar
+                      <!-- Botón de eliminar: usa data-action con la ruta /doctor-schedules/{id}/delete -->
+                      <button type="button" class="btn danger ajax-delete" data-action="/doctor-schedules/<?= $horarioId ?>/delete" style="background:#dc3545;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;">
+                        Eliminar
                       </button>
                   <?php endif; ?>
                 </td>
@@ -274,7 +275,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
 </noscript>
 
 <script>
-  // Validación de formularios individuales antes de envío
+  // Validación de formularios individuales antes de envío (igual que edit)
   (function(){
     var forms = document.querySelectorAll('#horariosTbody form');
     var re = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -346,8 +347,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
 </script>
 
 <script>
-  // Enviar formularios de fila por AJAX y quedarse en la misma pantalla
-  // Mejorado: delegación + fallback por botón + console.logging para depuración
+  // Enviar petición de eliminación por AJAX y quedarse en la misma pantalla
   (function(){
     var tbody = document.getElementById('horariosTbody');
     if (!tbody) return;
@@ -380,38 +380,33 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
       try { existing.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e){}
     }
 
-    function handleSaveClick(btn){
+    function handleDeleteClick(btn){
       try {
         if (!btn || btn.disabled) return;
         var form = btn.closest('form');
-        // Puede que el navegador haya reubicado el <form> (display:contents) y no sea ancestro.
-        // Buscamos el <tr> y tomamos inputs desde allí como fallback.
         var row = btn.closest('tr');
         if (!form || !(form instanceof HTMLFormElement)) {
-          // no hay formulario ancestro; usaremos el data-action del botón y construiremos FormData desde los inputs del <tr>
-          if (!row) {
-            console.error('No se encontró el formulario ni la fila padre para el botón Guardar', btn);
-            return;
-          }
+          // no hay formulario ancestro; usaremos inputs del <tr> como fallback.
         }
 
-        // Small client-side validation: ensure required selects exist
         var container = (form && form instanceof HTMLFormElement) ? form : row;
         var startSel = container ? container.querySelector('.start-select') : null;
         var endSel = container ? container.querySelector('.end-select') : null;
         var daySel = container ? container.querySelector('.day-select') : null;
         if (!daySel || !startSel || !endSel) {
-          console.warn('Campos faltantes en la fila/formulario, abortando envío', { daySel: !!daySel, startSel: !!startSel, endSel: !!endSel });
+          console.warn('Campos faltantes en la fila/formulario, abortando eliminación', { daySel: !!daySel, startSel: !!startSel, endSel: !!endSel });
           return;
         }
 
         var originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = 'Guardando...';
+        btn.innerHTML = 'Eliminando...';
 
         var action = (form && form.action) ? form.action : (btn.getAttribute('data-action') || null);
+        // If form.action points to /update we still want to call the delete route provided in data-action
+        if (btn.getAttribute('data-action')) action = btn.getAttribute('data-action');
         if (!action) {
-          console.error('No se pudo determinar la URL de acción para guardar el horario', btn);
+          console.error('No se pudo determinar la URL de acción para eliminar el horario', btn);
           return;
         }
 
@@ -435,22 +430,24 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
           });
         }
 
-  // Debug: print only the JSON payload that will be sent
-  try {
-    var _payloadPreview = {};
-    for (var pair of fd.entries()) {
-      var k = pair[0], v = pair[1];
-      if (_payloadPreview.hasOwnProperty(k)) {
-        if (!Array.isArray(_payloadPreview[k])) _payloadPreview[k] = [_payloadPreview[k]];
-        _payloadPreview[k].push(v);
-      } else {
-        _payloadPreview[k] = v;
-      }
-    }
-  console.log(String(JSON.stringify(_payloadPreview)));
-  } catch (e) {
-    console.warn('No se pudo serializar FormData para debug', e);
-  }
+        // Añadir marca explícita opcional para que el servidor sepa que es una eliminación
+        try { fd.append('_intent', 'delete'); } catch(e){}
+
+        try {
+          var _payloadPreview = {};
+          for (var pair of fd.entries()) {
+            var k = pair[0], v = pair[1];
+            if (_payloadPreview.hasOwnProperty(k)) {
+              if (!Array.isArray(_payloadPreview[k])) _payloadPreview[k] = [_payloadPreview[k]];
+              _payloadPreview[k].push(v);
+            } else {
+              _payloadPreview[k] = v;
+            }
+          }
+          console.log(String(JSON.stringify(_payloadPreview)));
+        } catch (e) {
+          console.warn('No se pudo serializar FormData para debug', e);
+        }
 
         fetch(action, {
           method: 'POST',
@@ -458,62 +455,116 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
           credentials: 'same-origin',
           headers: { 'X-Requested-With': 'XMLHttpRequest' }
         }).then(function(resp){
-          // Prefer JSON responses for AJAX; fall back to text/html parsing if not JSON
           return resp.text().then(function(text){
             var parsed = null;
             try { parsed = JSON.parse(text); } catch(e) { parsed = null; }
 
             if (parsed && typeof parsed === 'object') {
               if (resp.ok) {
-                showRowMessage(container, parsed.message || 'Guardado correctamente.', 'success');
+                showRowMessage(container, parsed.message || 'Eliminado correctamente.', 'success');
+                // opcional: ocultar la fila
+                try { if (container && container.closest) container.closest('tr').style.opacity = '0.45'; } catch(e){}
+                // Desactivar el botón de eliminar para evitar re-envíos
+                try { btn.disabled = true; btn._deleted = true; btn.innerHTML = parsed.buttonText || 'Eliminado'; } catch(e){}
               } else {
-                showRowMessage(container, parsed.error || parsed.message || 'Error al guardar. Revisar los datos.', 'error');
+                showRowMessage(container, parsed.error || parsed.message || 'Error al eliminar. Revisar los datos.', 'error');
               }
               return;
             }
 
-            // Not JSON: fallback to old HTML parsing
             if (resp.ok) {
-              showRowMessage(container, 'Guardado correctamente.', 'success');
+              showRowMessage(container, 'Eliminado correctamente.', 'success');
+              try { if (container && container.closest) container.closest('tr').style.opacity = '0.45'; } catch(e){}
+              // Desactivar el botón de eliminar para evitar re-envíos
+              try { btn.disabled = true; btn._deleted = true; btn.innerHTML = 'Eliminado'; } catch(e){}
               return;
             }
             var m = text.match(/<div class=\"alert error\">([\s\S]*?)<\/div>/i);
             if (m && m[1]) {
               showRowMessage(container, stripTags(m[1]).trim(), 'error');
             } else {
-              // If server returned a raw JSON string (like {"error":"..."}) but parsing failed,
-              // show the raw text trimmed
               var txt = stripTags(text).trim();
-              showRowMessage(container, txt || 'Error al guardar. Revisar los datos.', 'error');
+              showRowMessage(container, txt || 'Error al eliminar. Revisar los datos.', 'error');
             }
           });
         }).catch(function(err){
           console.error('Fetch error:', err);
           showRowMessage(container, 'Error de red: ' + (err && err.message ? err.message : ''), 'error');
         }).finally(function(){
-          btn.disabled = false;
-          btn.innerHTML = originalHtml;
+          // Si el botón fue marcado como eliminado, no lo re-habilitamos
+          try {
+            if (!btn._deleted) {
+              btn.disabled = false;
+              btn.innerHTML = originalHtml;
+            }
+          } catch(e) {
+            // safety: restore original state if anything falla
+            try { btn.disabled = false; btn.innerHTML = originalHtml; } catch(_) {}
+          }
         });
       } catch (ex) {
-        console.error('handleSaveClick excepción:', ex);
+        console.error('handleDeleteClick excepción:', ex);
       }
     }
 
+    // Modal de confirmación: crearemos y usaremos un modal en lugar de alert/confirm
+    var confirmModal = (function(){
+      var modal = document.createElement('div');
+      modal.id = 'confirmModal';
+      modal.innerHTML = '\n        <div class="cm-backdrop"></div>\n        <div class="cm-dialog" role="dialog" aria-modal="true" aria-labelledby="cm-title">\n          <div class="cm-header"><h3 id="cm-title">Confirmar acción</h3></div>\n          <div class="cm-body"><p id="cm-message">¿Confirma que desea eliminar este horario?</p></div>\n          <div class="cm-footer">\n            <button type="button" id="cm-cancel" class="btn ghost">Cancelar</button>\n            <button type="button" id="cm-confirm" class="btn danger">Eliminar</button>\n          </div>\n        </div>\n      ';
+      modal.style.display = 'none';
+      document.body.appendChild(modal);
+
+      var backdrop = modal.querySelector('.cm-backdrop');
+      var dialog = modal.querySelector('.cm-dialog');
+      var msgEl = modal.querySelector('#cm-message');
+      var btnCancel = modal.querySelector('#cm-cancel');
+      var btnConfirm = modal.querySelector('#cm-confirm');
+
+      var onConfirm = null, onCancel = null;
+
+      function show(message, cbConfirm, cbCancel) {
+        msgEl.textContent = String(message || '¿Confirma la acción?');
+        onConfirm = typeof cbConfirm === 'function' ? cbConfirm : null;
+        onCancel = typeof cbCancel === 'function' ? cbCancel : null;
+        modal.style.display = 'block';
+        setTimeout(function(){ modal.classList.add('open'); try{ btnConfirm.focus(); }catch(e){} }, 10);
+      }
+
+      function hide() {
+        modal.classList.remove('open');
+        setTimeout(function(){ modal.style.display = 'none'; }, 180);
+      }
+
+      btnCancel.addEventListener('click', function(){ hide(); if (onCancel) onCancel(); });
+      backdrop.addEventListener('click', function(){ hide(); if (onCancel) onCancel(); });
+      btnConfirm.addEventListener('click', function(){ hide(); if (onConfirm) onConfirm(); });
+
+      // keyboard: Esc to cancel
+      document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.style.display === 'block') { hide(); if (onCancel) onCancel(); } });
+
+      return { show: show, hide: hide };
+    })();
+
     // Delegación en tbody (funciona aunque el formulario use display:contents)
     tbody.addEventListener('click', function(e){
-      var btn = e.target && e.target.closest ? e.target.closest('.ajax-save') : null;
+      var btn = e.target && e.target.closest ? e.target.closest('.ajax-delete') : null;
       if (btn) {
         e.preventDefault();
-        handleSaveClick(btn);
+        // Abrir modal en lugar de confirm()
+        confirmModal.show('¿Confirma que desea eliminar este horario?', function(){ handleDeleteClick(btn); }, function(){ /* cancel */ });
       }
     }, false);
 
     // Fallback: attach listeners directamente a los botones existentes
-    var ajaxButtons = tbody.querySelectorAll('.ajax-save');
+    var ajaxButtons = tbody.querySelectorAll('.ajax-delete');
     Array.prototype.forEach.call(ajaxButtons, function(btn){
-      // Avoid double-binding the same handler
       if (btn._hasAjaxHandler) return;
-      btn.addEventListener('click', function(e){ e.preventDefault(); handleSaveClick(btn); }, false);
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        // Show modal confirmation for this button
+        confirmModal.show('¿Confirma que desea eliminar este horario?', function(){ handleDeleteClick(btn); }, function(){});
+      }, false);
       btn._hasAjaxHandler = true;
     });
 
@@ -521,7 +572,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
 </script>
 
 <script>
-  // Actualizar año cuando cambie el mes
+  // Actualizar año cuando cambie el mes (igual que edit)
   (function(){
     var mesSelect = document.getElementById('mes');
     var anioSelect = document.getElementById('anio');
@@ -540,17 +591,14 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
         yearToUse = nextYear;
       }
       
-      // Actualizar el select de año
       anioSelect.innerHTML = '<option value="' + yearToUse + '" selected>' + yearToUse + '</option>';
       
-      // Actualizar todos los formularios con el nuevo año
       var forms = document.querySelectorAll('#horariosTbody form');
       Array.prototype.forEach.call(forms, function(form){
         var anioInput = form.querySelector('input[name="anio"]');
         if (anioInput) {
           anioInput.value = String(yearToUse);
         }
-        // también actualizar el campo mes oculto en cada formulario
         var mesInput = form.querySelector('input[name="mes"]');
         if (mesInput) mesInput.value = String(chosen);
       });
@@ -559,7 +607,7 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
 </script>
 
 <script>
-  // Propagar cambios de Doctor y Sede a los formularios individuales
+  // Propagar cambios de Doctor y Sede a los formularios individuales (igual que edit)
   (function(){
     var docTop = document.getElementById('doctor_top');
     if (docTop) {
@@ -634,6 +682,15 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
   .btn.primary:hover {
     background-color: #0056b3;
   }
+
+  .btn.danger {
+    background-color: #dc3545;
+    color: white;
+  }
+
+  .btn.danger:hover {
+    background-color: #b02a37;
+  }
   
   .btn.ghost {
     background-color: #6c757d;
@@ -690,4 +747,14 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
     opacity: 0.85;
   }
   .blocked-row .input[disabled] { background-color: #e9ecef; }
+  
+  /* Confirm modal styles */
+  #confirmModal{ position:fixed; inset:0; display:none; z-index:1200; }
+  #confirmModal .cm-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.45); backdrop-filter: blur(1px); }
+  #confirmModal .cm-dialog{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.98); background:#fff; border-radius:8px; width:420px; max-width:95%; box-shadow:0 10px 30px rgba(0,0,0,0.2); opacity:0; transition:all .18s ease; }
+  #confirmModal.open .cm-dialog{ transform:translate(-50%,-50%) scale(1); opacity:1; }
+  #confirmModal .cm-header{ padding:12px 16px; border-bottom:1px solid #eee; }
+  #confirmModal .cm-body{ padding:16px; font-size:15px; color:#333; }
+  #confirmModal .cm-footer{ padding:12px 16px; text-align:right; border-top:1px solid #f1f1f1; }
+  #confirmModal .cm-footer .btn { margin-left:8px; }
 </style>

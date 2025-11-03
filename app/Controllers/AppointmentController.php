@@ -159,8 +159,22 @@ class AppointmentController
             return $res->view('citas/create', ['error'=>'El horario ya no está disponible'] + self::bags());
         }
 
-        Appointment::create($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes);
-        return $res->redirect('/citas');
+        // Si el frontend envía calendario_id lo usamos para reservar el slot en la misma operación
+        $calendarioId = isset($_POST['calendario_id']) ? (int)$_POST['calendario_id'] : null;
+
+        try {
+            Appointment::create($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes, $calendarioId, $time);
+            return $res->redirect('/citas');
+        } catch (\Throwable $e) {
+            // Si no fue posible reservar el slot (otro proceso lo reservó), mostrar mensaje amigable
+            $msg = $e->getMessage();
+            if (stripos($msg, 'reserv') !== false) {
+                $err = 'El horario ya no está disponible';
+            } else {
+                $err = 'Error al crear la cita';
+            }
+            return $res->view('citas/create', ['error'=>$err] + self::bags());
+        }
     }
 
     /** El médico puede marcar su cita como 'atendido' */

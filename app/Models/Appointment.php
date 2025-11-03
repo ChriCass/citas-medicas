@@ -115,19 +115,48 @@ class Appointment extends BaseModel
         string $horaInicio,
         string $horaFin,
         ?string $razon = ''
+    , ?int $calendarioId = null, ?string $slotHora = null
     ): int {
-        $appointment = new static();
-        $appointment->paciente_id = $pacienteId;
-        $appointment->doctor_id = $doctorId;
-        $appointment->sede_id = $sedeId;
-        $appointment->fecha = $fecha;
-        $appointment->hora_inicio = $horaInicio;
-        $appointment->hora_fin = $horaFin;
-        $appointment->razon = $razon;
-        $appointment->estado = 'pendiente';
-        $appointment->save();
-        
-        return $appointment->id;
+        // Crear cita y, si se proporciona calendario_id + slotHora, marcar el slot como reservado
+        DB::beginTransaction();
+        try {
+            $appointment = new static();
+            $appointment->paciente_id = $pacienteId;
+            $appointment->doctor_id = $doctorId;
+            $appointment->sede_id = $sedeId;
+            $appointment->fecha = $fecha;
+            $appointment->hora_inicio = $horaInicio;
+            $appointment->hora_fin = $horaFin;
+            $appointment->razon = $razon;
+            $appointment->estado = 'pendiente';
+            // si se proporciona calendario_id, guardarlo en la cita
+            if ($calendarioId) $appointment->calendario_id = $calendarioId;
+            $appointment->save();
+
+            $createdId = $appointment->id;
+
+            // Si recibimos calendario_id y slotHora (HH:MM) intentamos actualizar el slot correspondiente
+            if ($calendarioId && $slotHora) {
+                // Buscar slot por calendario_id y hora_inicio (match por prefijo HH:MM)
+                $affected = DB::table('slots_calendario')
+                    ->where('calendario_id', $calendarioId)
+                    ->where('hora_inicio', 'like', $slotHora . '%')
+                    ->whereNull('reservado_por_cita_id')
+                    ->update(['reservado_por_cita_id' => $createdId]);
+
+                if ($affected <= 0) {
+                    // No se pudo reservar el slot (otro proceso lo reservó)
+                    DB::rollBack();
+                    throw new \Exception('El slot ya fue reservado');
+                }
+            }
+
+            DB::commit();
+            return $createdId;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
     
     public static function cancelByPatient(int $id, int $userId): bool
