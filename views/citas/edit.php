@@ -57,7 +57,7 @@
     <div><strong>Paciente:</strong> <?= htmlspecialchars($pacienteNombre) ?> <?= htmlspecialchars($pacienteApellido) ?></div>
     <div><strong>Fecha:</strong> <?= htmlspecialchars($fmtDate($citaFecha)) ?></div>
     <div><strong>Hora:</strong> <?= htmlspecialchars($fmtTime($citaHora)) ?></div>
-    <div><strong>Motivo:</strong> <?= htmlspecialchars($citaMotivo) ?></div>
+    <!-- <div><strong>Motivo:</strong> <?= htmlspecialchars($citaMotivo) ?></div> -->
   </div>
 
   <form method="POST" action="/citas/<?= (int)$a['id'] ?>/edit">

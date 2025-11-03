@@ -47,7 +47,7 @@
     <div><strong>Paciente:</strong> <?= htmlspecialchars($a['paciente_nombre'] ?? ($a->paciente?->user?->nombre ?? '')) ?> <?= htmlspecialchars($a['paciente_apellido'] ?? ($a->paciente?->user?->apellido ?? '')) ?></div>
     <div><strong>Fecha:</strong> <?= htmlspecialchars($fmtDate($a['fecha'] ?? ($a->fecha ?? ''))) ?></div>
     <div><strong>Hora:</strong> <?= htmlspecialchars($fmtTime($a['hora_inicio'] ?? ($a->hora_inicio ?? ''))) ?></div>
-    <div><strong>Motivo:</strong> <?= htmlspecialchars($a['razon'] ?? '') ?></div>
+    <!-- <div><strong>Motivo:</strong> <?= htmlspecialchars($a['razon'] ?? '') ?></div> -->
   </div>
 
   <form method="POST" action="/citas/<?= (int)$a['id'] ?>/attend">
