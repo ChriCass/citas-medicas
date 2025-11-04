@@ -142,13 +142,33 @@ class SimpleDatabase
 
     public function insert($table, $data)
     {
-        $columns = implode(',', array_keys($data));
-        $placeholders = ':' . implode(', :', array_keys($data));
+        // Filtrar valores vacíos pero mantener los que son requeridos
+        $filteredData = [];
+        foreach ($data as $key => $value) {
+            // Solo agregar si no es una cadena vacía o si es un valor válido
+            if ($value !== '' && $value !== null) {
+                $filteredData[$key] = $value;
+            } elseif ($value === null || $value === '') {
+                // Para campos que pueden ser NULL, agregarlos
+                $filteredData[$key] = null;
+            }
+        }
+        
+        $columns = implode(',', array_keys($filteredData));
+        $placeholders = ':' . implode(', :', array_keys($filteredData));
         
         $sql = "INSERT INTO {$table} ({$columns}) VALUES ({$placeholders})";
-        $this->query($sql, $data);
         
-        return $this->pdo->lastInsertId();
+        try {
+            $this->query($sql, $filteredData);
+            return $this->pdo->lastInsertId();
+        } catch (PDOException $e) {
+            // Log del error para debugging
+            error_log("Error en INSERT: " . $e->getMessage());
+            error_log("SQL: " . $sql);
+            error_log("Data: " . print_r($filteredData, true));
+            throw new \Exception("Error al insertar en {$table}: " . $e->getMessage());
+        }
     }
 
     public function update($table, $data, $where, $whereParams = [])
@@ -180,5 +200,30 @@ class SimpleDatabase
         $result = $stmt->execute($params);
         
         return $result && $stmt->rowCount() > 0;
+    }
+
+    public function execute($sql, $params = [])
+    {
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            throw new \Exception("Error al ejecutar consulta: " . $e->getMessage());
+        }
+    }
+
+    public function beginTransaction()
+    {
+        return $this->pdo->beginTransaction();
+    }
+
+    public function commit()
+    {
+        return $this->pdo->commit();
+    }
+
+    public function rollback()
+    {
+        return $this->pdo->rollBack();
     }
 }

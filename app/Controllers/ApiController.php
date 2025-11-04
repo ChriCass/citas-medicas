@@ -77,8 +77,15 @@ class ApiController
             $slots = \App\Core\Availability::slotsForDate($dateObj, (int)$doctorId, (int)$locationId);
             
             return $response->json(['slots' => $slots]);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return $response->json(['error' => 'Error al obtener horarios: ' . $e->getMessage()], 500);
         }
+    }
+    
+    public function getEspecialidades(Request $request, Response $response)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        $especialidades = $db->fetchAll("SELECT id, nombre FROM especialidades ORDER BY nombre");
+        return $response->json(['success' => true, 'data' => $especialidades]);
     }
 }
