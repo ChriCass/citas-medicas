@@ -47,6 +47,19 @@ class User extends Model
         return $role ? $role['nombre'] : 'usuario';
     }
     
+    public function hasRole($roleName)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        $role = $db->fetchOne(
+            "SELECT r.id FROM roles r 
+             INNER JOIN tiene_roles tr ON r.id = tr.rol_id 
+             WHERE tr.usuario_id = ? AND r.nombre = ?", 
+            [$this->id, $roleName]
+        );
+        
+        return $role !== null;
+    }
+    
     public function verifyPassword($password)
     {
         return password_verify($password, $this->contrasenia);
