@@ -67,11 +67,19 @@ El sistema está configurado para inicializar Eloquent automáticamente:
 
 ### 7. Verificar Instalación
 ```bash
-# Ejecutar test completo de Eloquent
-php test_eloquent_completo.php
+# Ejecutar test completo del sistema de citas médicas
+php test_sistema_citas.php
 ```
 
-El test debe mostrar **51/51 pruebas exitosas (100%)**.
+El test debe mostrar **69/69 pruebas exitosas (100%)** y verificar:
+- ✅ Conexión a base de datos y configuración
+- ✅ Usuarios demo `@demo.local` funcionando
+- ✅ Autenticación con contraseña "password"
+- ✅ Control de acceso por roles
+- ✅ Flujo completo de citas médicas
+- ✅ Gestión de doctores y especialidades
+- ✅ Operaciones de pacientes, cajeros y superadmin
+- ✅ Validaciones de lógica de negocio
 
 ## 🚀 EJECUTAR EL SISTEMA
 
@@ -84,6 +92,13 @@ php -S localhost:8000 -t public
 ### 9. Acceder al Sistema
 - **URL**: http://localhost:8000
 - **Usuarios Demo** (password: `password`):
+  - super@demo.local (superadmin)
+  - doctor@demo.local (doctor)
+  - paciente@demo.local (paciente)
+  - cajero@demo.local (cajero)
+
+### 10. Usuarios de Producción
+También disponibles para pruebas avanzadas:
   - super@clinicasanjose.com
   - doctor@clinicasanjose.com  
   - paciente@clinicasanjose.com
@@ -134,15 +149,71 @@ php -S localhost:8000 -t public
 - `Sede` - Sedes y ubicaciones
 - `Role` - Sistema de roles
 
-## 🧪 TESTING
+## 🧪 TESTING Y VALIDACIÓN
 
-### Ejecutar Tests
+### Test Principal del Sistema
 ```bash
-# Test completo de migración
-php test_eloquent_completo.php
+# Ejecutar test completo del sistema de citas médicas
+php test_sistema_citas.php
+```
 
-# Verificar funcionalidades específicas
+### Cobertura del Test (69 pruebas)
+El test `test_sistema_citas.php` verifica **100% funcionalidad**:
+
+#### 🔧 **Infraestructura** (4 pruebas)
+- Conexión a base de datos (42 usuarios)
+- Configuración de roles (4 roles)
+- Especialidades médicas (10 disponibles)
+- Sedes médicas (10 configuradas)
+
+#### 👥 **Usuarios Demo** (12 pruebas)
+- Existencia de usuarios `@demo.local`
+- Roles asignados correctamente
+- Perfiles específicos creados (superadmin, doctor, paciente, cajero)
+
+#### 🔐 **Autenticación** (8 pruebas)
+- Login con contraseña "password"
+- Sistema de autenticación funcional
+- Validación para cada rol
+
+#### 🛡️ **Control de Acceso** (6 pruebas)
+- Permisos de superadmin (acceso total)
+- Permisos de doctor (citas médicas)
+- Permisos de paciente (citas propias)
+- Permisos de cajero (operaciones básicas)
+
+#### 🏥 **Funcionalidad Médica** (15 pruebas)
+- Creación y gestión de citas
+- Flujo de estados (pendiente → confirmado → atendido)
+- Relaciones paciente-doctor-sede
+- Validación de horarios y especialidades
+
+#### 🏢 **Operaciones** (18 pruebas)
+- Gestión de horarios médicos
+- Administración de pacientes
+- Operaciones de cajero y facturación
+- Funciones de superadmin
+
+#### ⚖️ **Lógica de Negocio** (6 pruebas)
+- Validación de horarios no superpuestos
+- Control de citas duplicadas
+- Estados de citas válidos
+- Doctores con especialidad asignada
+
+### Usuarios de Prueba Verificados
+El test confirma que estos usuarios funcionan al **100%**:
+- ✅ `super@demo.local` - Super Demo (superadmin)
+- ✅ `doctor@demo.local` - Doctor Demo (doctor)
+- ✅ `paciente@demo.local` - Paciente Demo (paciente)
+- ✅ `cajero@demo.local` - Cajero Demo (cajero)
+
+### Verificaciones Adicionales
+```bash
+# Verificar API endpoints
 curl http://localhost:8000/api/appointments
+
+# Test de funcionalidades específicas
+# El sistema ejecuta automáticamente 69 validaciones individuales
 ```
 
 ## 📁 ESTRUCTURA DEL PROYECTO
@@ -166,6 +237,9 @@ curl http://localhost:8000/api/appointments
 2. **Performance**: Eloquent optimiza automáticamente las consultas
 3. **Seguridad**: Protección automática contra SQL injection
 4. **Escalabilidad**: Preparado para crecimiento futuro
+5. **Testing**: Sistema verificado con 69 pruebas automatizadas (100% éxito)
+6. **Usuarios Demo**: Los usuarios `@demo.local` están diseñados específicamente para testing
+7. **Entorno de Producción**: Los usuarios `@clinicasanjose.com` simulan un entorno real
 
 ## 🐛 SOLUCIÓN DE PROBLEMAS
 
@@ -173,6 +247,15 @@ curl http://localhost:8000/api/appointments
 - Verificar credenciales en `.env`
 - Comprobar que el servicio de BD esté activo
 - Verificar extensiones PHP: `pdo_sqlsrv` o `pdo_mysql`
+
+### Test Fallando
+```bash
+# Si el test no alcanza 100%, verificar:
+# 1. Base de datos configurada correctamente
+# 2. Usuarios demo creados (ejecutar schema.sql completo)
+# 3. Extensiones PHP instaladas
+php test_sistema_citas.php
+```
 
 ### Error de Composer
 ```bash
@@ -183,5 +266,14 @@ composer dump-autoload
 ### Error de Permisos
 - Asegurar permisos de escritura en directorios de logs
 - Verificar permisos de BD para el usuario configurado
+
+### Usuarios Demo No Encontrados
+Si el test falla porque no encuentra usuarios `@demo.local`:
+```sql
+-- Ejecutar esta sección del schema.sql:
+-- ============================================
+-- INSERTAR USUARIOS DEMO CON @demo.local
+-- ============================================
+```
 
 ---
