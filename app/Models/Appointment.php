@@ -12,6 +12,11 @@ class Appointment extends Model
             'hora_inicio', 'hora_fin', 'razon', 'estado', 'pago',
             'diagnostico_id', 'observaciones_medicas', 'receta'
         ];
+    protected $casts = [
+        'fecha' => 'date',
+        'hora_inicio' => 'datetime:H:i:s',
+        'hora_fin' => 'datetime:H:i:s'
+    ];
     
     public $timestamps = false;
     
@@ -41,15 +46,20 @@ class Appointment extends Model
         return $db->fetchOne("SELECT * FROM citas WHERE id = ?", [$id]);
     }
     
-    public static function updateStatus($id, $status)
+    public static function updateStatus($id, $status): bool
     {
         $allowed = ['pendiente','confirmado','atendido','cancelado'];
-        if (!in_array($status, $allowed, true)) {
+        if (!in_array($estado,$allowed,true)) {
             return false;
         }
         
-        $db = \App\Core\SimpleDatabase::getInstance();
-        return $db->update('citas', ['estado' => $status], 'id = ?', [$id]);
+        $appointment = static::find($id);
+        if (!$appointment) {
+            return false;
+        }
+        
+        $appointment->estado = $estado;
+        return $appointment->save();
     }
     
     public static function updatePayment($id, $paymentStatus)
@@ -73,23 +83,18 @@ class Appointment extends Model
     public static function overlapsWindow($date, $startTime, $endTime, $doctorId, $sedeId = null)
     {
         $db = \App\Core\SimpleDatabase::getInstance();
-        
-        $sql = "SELECT COUNT(*) as count FROM citas 
-                WHERE doctor_id = ? 
-                AND fecha = ? 
+
+        $sql = "SELECT COUNT(*) as count FROM citas
+                WHERE fecha = ?
                 AND estado != 'cancelado'
+                AND (hora_inicio < ? AND hora_fin > ?)
                 AND (
-                    (hora_inicio < ? AND hora_fin > ?) OR
-                    (hora_inicio >= ? AND hora_fin <= ?)
+                    doctor_id = ?
+                    OR sede_id = ?
                 )";
-        
-        $params = [$doctorId, $date, $endTime, $startTime, $startTime, $endTime];
-        
-        if ($sedeId) {
-            $sql .= " AND sede_id = ?";
-            $params[] = $sedeId;
-        }
-        
+
+        $params = [$date, $endTime, $startTime, $doctorId, $sedeId, $sedeId];
+
         $result = $db->fetchOne($sql, $params);
         return $result['count'] > 0;
     }
@@ -349,5 +354,94 @@ class Appointment extends Model
             'hora_fin' => $horaFinCalculada,
             'razon' => $razon
         ]);
+    }
+
+    public static function create(
+        int $pacienteId,
+        int $doctorId,
+        ?int $sedeId,
+        string $fecha,
+        string $horaInicio,
+        string $horaFin,
+        ?string $razon = ''
+    , ?int $calendarioId = null, ?string $slotHora = null
+    ): int {
+        // Crear cita y, si se proporciona calendario_id + slotHora, marcar el slot como reservado
+        DB::beginTransaction();
+        try {
+            $appointment = new static();
+            $appointment->paciente_id = $pacienteId;
+            $appointment->doctor_id = $doctorId;
+            $appointment->sede_id = $sedeId;
+            $appointment->fecha = $fecha;
+            $appointment->hora_inicio = $horaInicio;
+            $appointment->hora_fin = $horaFin;
+            $appointment->razon = $razon;
+            $appointment->estado = 'pendiente';
+            // si se proporciona calendario_id, guardarlo en la cita
+            if ($calendarioId) $appointment->calendario_id = $calendarioId;
+            $appointment->save();
+
+            $createdId = $appointment->id;
+
+            // Si recibimos calendario_id y slotHora (HH:MM) intentamos actualizar el slot correspondiente
+            if ($calendarioId && $slotHora) {
+                // Buscar slot por calendario_id y hora_inicio (match por prefijo HH:MM)
+                $affected = DB::table('slots_calendario')
+                    ->where('calendario_id', $calendarioId)
+                    ->where('hora_inicio', 'like', $slotHora . '%')
+                    ->whereNull('reservado_por_cita_id')
+                    ->update(['reservado_por_cita_id' => $createdId]);
+
+                if ($affected <= 0) {
+                    // No se pudo reservar el slot (otro proceso lo reservó)
+                    DB::rollBack();
+                    throw new \Exception('El slot ya fue reservado');
+                }
+            }
+
+            DB::commit();
+            return $createdId;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public static function belongsToPatient(int $id, int $userId): bool
+    {
+        return static::whereHas('paciente', function($query) use ($userId) {
+            $query->where('usuario_id', $userId);
+        })->where('id', $id)->exists();
+    }
+
+    public function getPacienteNombreAttribute(): ?string
+    {
+        return $this->paciente?->user?->nombre;
+    }
+    
+    public function getPacienteApellidoAttribute(): ?string
+    {
+        return $this->paciente?->user?->apellido;
+    }
+    
+    public function getDoctorNombreAttribute(): ?string
+    {
+        return $this->doctor?->user?->nombre;
+    }
+    
+    public function getDoctorApellidoAttribute(): ?string
+    {
+        return $this->doctor?->user?->apellido;
+    }
+    
+    public function getSedeNombreAttribute(): ?string
+    {
+        return $this->sede?->nombre_sede;
+    }
+    
+    public function getEspecialidadNombreAttribute(): ?string
+    {
+        return $this->doctor?->especialidad?->nombre;
     }
 }

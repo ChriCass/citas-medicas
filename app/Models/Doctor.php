@@ -32,6 +32,14 @@ class Doctor extends Model
     {
         return $this->hasMany(DoctorSchedule::class, 'doctor_id');
     }
+
+    /**
+     * Many-to-many relationship: doctors <-> sedes via pivot table doctor_sede
+     */
+    public function sedes()
+    {
+        return $this->belongsToMany(Sede::class, 'doctor_sede', 'doctor_id', 'sede_id');
+    }
     
     public static function findByUsuarioId($usuarioId)
     {
@@ -93,5 +101,11 @@ class Doctor extends Model
                 'especialidad_descripcion' => $doctor['especialidad_descripcion'] ?? ''
             ];
         }, $doctors);
+    }
+
+    public function user()
+    {
+        // The users table is called `usuarios` and the FK in `doctores` is `usuario_id`.
+        return $this->belongsTo(User::class, 'usuario_id', 'id');
     }
 }

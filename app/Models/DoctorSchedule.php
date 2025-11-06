@@ -1,113 +1,536 @@
 <?php
-
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class DoctorSchedule extends Model
+class DoctorSchedule extends BaseModel
 {
     protected $table = 'horarios_medicos';
+    
     protected $fillable = [
         'doctor_id', 'sede_id', 'fecha', 'hora_inicio', 
-        'hora_fin', 'activo', 'observaciones'
+        'hora_fin', 'activo', 'observaciones', 'dia_semana', 'mes', 'anio'
+    ];
+
+    
+    protected $casts = [
+        'hora_inicio' => 'datetime:H:i:s',
+        'hora_fin' => 'datetime:H:i:s',
+        'activo' => 'boolean'
     ];
     
-    public $timestamps = false;
-    
-    public function doctor()
+    // Relaciones
+    public function doctor(): BelongsTo
     {
         return $this->belongsTo(Doctor::class, 'doctor_id');
     }
     
-    public function sede()
+    public function sede(): BelongsTo
     {
         return $this->belongsTo(Sede::class, 'sede_id');
     }
     
-    public static function listAll()
+    // Scopes
+    public function scopeActive($query)
     {
-        $db = \App\Core\SimpleDatabase::getInstance();
-        
-        $sql = "SELECT hm.*, 
-                       du.nombre as doctor_nombre, du.apellido as doctor_apellido,
-                       s.nombre_sede
-                FROM horarios_medicos hm
-                LEFT JOIN doctores d ON hm.doctor_id = d.id
-                LEFT JOIN usuarios du ON d.usuario_id = du.id
-                LEFT JOIN sedes s ON hm.sede_id = s.id
-                ORDER BY hm.fecha DESC, hm.hora_inicio ASC";
-        
-        return $db->fetchAll($sql);
+        return $query->where('activo', true);
     }
     
-    public static function overlaps($doctorId, $sedeId, $fecha, $startTime, $endTime)
+    // Métodos estáticos para compatibilidad
+    public static function listAll(): \Illuminate\Database\Eloquent\Collection
     {
-        $db = \App\Core\SimpleDatabase::getInstance();
+        // La tabla `horarios_medicos` puede no tener columna `fecha` (patrones por día de semana),
+        // ordenar por `dia_semana` y luego por hora de inicio para mostrar en UI.
+        return static::with(['doctor.user', 'sede'])
+                     ->active()
+                     ->orderBy('dia_semana')
+                     ->orderBy('hora_inicio')
+                     ->get();
+    }
+    
+    public static function forDate(int $doctorId, int $locationId, string $date): \Illuminate\Database\Eloquent\Collection
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('fecha', $date)
+                       ->active()
+                       ->orderBy('hora_inicio');
         
-        $sql = "SELECT * FROM horarios_medicos 
-                WHERE doctor_id = ? AND fecha = ? AND activo = 1";
-        $params = [$doctorId, $fecha];
-        
-        if ($sedeId) {
-            $sql .= " AND sede_id = ?";
-            $params[] = $sedeId;
+        if ($locationId > 0) {
+            $query->where('sede_id', $locationId);
+        } else {
+            $query->whereNull('sede_id');
         }
         
-        $existingSchedules = $db->fetchAll($sql, $params);
+        return $query->get();
+    }
+    
+    public static function forDateRange(int $doctorId, string $startDate, string $endDate): \Illuminate\Database\Eloquent\Collection
+    {
+        return static::where('doctor_id', $doctorId)
+                     ->whereBetween('fecha', [$startDate, $endDate])
+                     ->active()
+                     ->orderBy('fecha')
+                     ->orderBy('hora_inicio')
+                     ->get();
+    }
+    
+    public static function create(int $doctorId, int $locationId, string $date, string $start, string $end, string $observaciones = null): int
+    {
+        $schedule = new static();
+        $schedule->doctor_id = $doctorId;
+        $schedule->sede_id = $locationId ?: null;
+        $schedule->fecha = $date;
+        $schedule->hora_inicio = $start;
+        $schedule->hora_fin = $end;
+        $schedule->observaciones = $observaciones;
+        $schedule->activo = true;
+        // Guardar año derivado de la fecha (YYYY)
+        try {
+            $y = (int)date('Y', strtotime($date));
+            if ($y > 0) $schedule->anio = $y;
+        } catch (\Throwable $e) {
+            // ignore
+        }
+        $schedule->save();
         
-        foreach ($existingSchedules as $schedule) {
-            $existingStart = strtotime($schedule['hora_inicio']);
-            $existingEnd = strtotime($schedule['hora_fin']);
-            $newStart = strtotime($startTime);
-            $newEnd = strtotime($endTime);
-            
-            // Verificar si hay solapamiento
-            if (($newStart < $existingEnd) && ($newEnd > $existingStart)) {
+        return $schedule->id;
+    }
+
+    /**
+     * Crear un patrón semanal en la tabla `horarios_medicos` (dia_semana en texto, p.e. 'lunes').
+     * Devuelve el id del registro creado.
+     */
+    public static function createPattern(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, string $observaciones = null, ?string $mes = null, ?int $anio = null): int
+    {
+        $p = new static();
+        $p->doctor_id = $doctorId;
+        $p->sede_id = $locationId ?: null;
+        $p->dia_semana = $diaSemana;
+        $p->hora_inicio = $start;
+        $p->hora_fin = $end;
+        $p->observaciones = $observaciones;
+        if ($mes !== null) $p->mes = mb_strtolower(trim((string)$mes));
+        if ($anio !== null && (int)$anio > 0) $p->anio = (int)$anio;
+        $p->activo = true;
+        $p->save();
+        return (int)$p->id;
+    }
+
+    /**
+     * Comprueba si existe un patrón activo igual para evitar duplicados.
+     * Permite múltiples horarios por doctor/día siempre que no sean exactamente iguales.
+     */
+    public static function patternExists(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null): bool
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('dia_semana', $diaSemana)
+                       ->where('hora_inicio', $start)
+                       ->where('hora_fin', $end)
+                       ->active();
+
+        if ($locationId && (int)$locationId > 0) {
+            $query->where('sede_id', (int)$locationId);
+        } else {
+            $query->whereNull('sede_id');
+        }
+
+        // Filtrar por mes: si se proporcionó, comparar con el valor normalizado; si no, buscar patrones globales (mes NULL/empty)
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where('mes', $m);
+            // Si se provee año, preferir patrones sin año (globales) o con el mismo año
+            if ($anio !== null && (int)$anio > 0) {
+                $query->where(function($q) use ($anio) {
+                    $q->whereNull('anio')->orWhere('anio', (int)$anio);
+                });
+            }
+        } else {
+            $query->where(function($q){
+                $q->whereNull('mes')->orWhere('mes', '');
+            });
+        }
+
+        return $query->exists();
+    }
+
+    /**
+     * Check if a doctor already has a pattern with the exact same start/end and day
+     * regardless of sede (useful to prevent duplicate time slots across sedes for same doctor).
+     */
+    public static function patternExistsIgnoreSede(int $doctorId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null): bool
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [mb_strtolower(trim($diaSemana))])
+                       ->where('hora_inicio', $start)
+                       ->where('hora_fin', $end)
+                       ->active();
+
+        // mes/anio scoping similar to patternExists
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
+            });
+        } else {
+            $query->where(function($q){ $q->whereNull('mes')->orWhere('mes',''); });
+        }
+
+        return $query->exists();
+    }
+
+    /**
+     * Buscar un patrón activo para el doctor/sede y día de la semana (devuelve id o null).
+     */
+    public static function findPatternId(int $doctorId, ?int $locationId, string $diaSemana, ?string $mes = null, ?int $anio = null): ?int
+    {
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('dia_semana', $diaSemana)
+                       ->active();
+
+        if ($locationId && (int)$locationId > 0) {
+            $query->where('sede_id', (int)$locationId);
+        } else {
+            $query->whereNull('sede_id');
+        }
+        // Filtrar por mes similar a patternExists
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where('mes', $m);
+            if ($anio !== null && (int)$anio > 0) {
+                $query->where(function($q) use ($anio) {
+                    $q->whereNull('anio')->orWhere('anio', (int)$anio);
+                });
+            }
+        } else {
+            $query->where(function($q){
+                $q->whereNull('mes')->orWhere('mes', '');
+            });
+        }
+
+        $first = $query->orderBy('hora_inicio')->first();
+        return $first ? (int)$first->id : null;
+    }
+    
+    public static function deleteSchedule(int $id): bool
+    {
+        $schedule = static::find($id);
+        if (!$schedule) {
+            return false;
+        }
+        
+        $schedule->activo = false;
+        return $schedule->save();
+    }
+    
+    public static function hardDelete(int $id): bool
+    {
+        $schedule = static::find($id);
+        if (!$schedule) {
+            return false;
+        }
+        
+        return $schedule->delete();
+    }
+    
+    /**
+     * Valida si un horario se solapa con otros horarios del mismo doctor.
+     * Permite múltiples horarios en el mismo día siempre que:
+     * - No se solapen en la misma sede
+     * - Se puede trabajar en diferentes sedes en el mismo día
+     * - Horarios globales (sede NULL) se validan contra todos los horarios del día
+     */
+    public static function overlaps(int $doctorId, int $locationId, string $date, string $start, string $end, int $excludeId = null): bool
+    {
+        // Build a clear, well-scoped query to detect overlapping schedules for the given date.
+        $query = static::where('doctor_id', $doctorId)
+                       ->where('fecha', $date)
+                       ->active();
+
+        // Time overlap: existing.hora_inicio < new_end AND existing.hora_fin > new_start
+        $query->where(function($q) use ($start, $end) {
+            $q->where('hora_inicio', '<', $end)
+              ->where('hora_fin', '>', $start);
+        });
+
+        // Sede scoping:
+        // - If the new schedule targets a specific sede, only consider existing schedules for that sede or global ones (sede_id IS NULL)
+        // - If the new schedule is global (locationId <= 0), consider all existing schedules for that date
+        if ($locationId > 0) {
+            $query->where(function($q) use ($locationId) {
+                $q->where('sede_id', $locationId)->orWhereNull('sede_id');
+            });
+        }
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        return $query->exists();
+    }
+    
+    /**
+     * Valida solapamiento de patrones semanales (por día de semana).
+     * Un doctor puede tener múltiples horarios en el mismo día de la semana siempre que:
+     * - No se solapen en tiempo dentro de la misma sede
+     * - Puede trabajar en diferentes sedes en el mismo día de la semana
+     */
+    public static function patternsOverlap(int $doctorId, ?int $locationId, string $diaSemana, string $start, string $end, ?string $mes = null, ?int $anio = null, ?int $excludeId = null): bool
+    {
+        // Normalize inputs: diaSemana -> lowercase normalized (remove accents), locationId to int/null
+        $normalize = function(string $s): string {
+            $s = mb_strtolower(trim($s));
+            $s = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $s);
+            return $s;
+        };
+        $diaSemanaNorm = $normalize($diaSemana);
+        $loc = ($locationId !== null && (int)$locationId > 0) ? (int)$locationId : null;
+
+        // Base query: same doctor and normalized day-of-week and active
+    $query = static::where('doctor_id', $doctorId)
+               ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+               ->active();
+
+        // Sede scoping: if new pattern is for a specific sede, only check that sede and global patterns
+        if ($loc !== null) {
+            $query->where(function($q) use ($loc) {
+                $q->where('sede_id', $loc)->orWhereNull('sede_id');
+            });
+        }
+
+        // Mes/anio scoping: include patterns that are global (mes NULL/empty) or match the provided month/year
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
+            });
+        }
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+        // Additional rule: Prevent creation/update of an identical pattern (same day + same start/end)
+        // for the same doctor regardless of sede. This ensures you cannot have two patterns with the
+        // same doctor, dia_semana, hora_inicio, hora_fin, mes and anio even if they belong to different sedes.
+        // excludeId is honored so updating the same record won't conflict with itself.
+        try {
+            $dupQuery = static::where('doctor_id', $doctorId)
+                              ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+                              ->where('hora_inicio', $start)
+                              ->where('hora_fin', $end)
+                              ->active();
+
+            if ($mes !== null && trim((string)$mes) !== '') {
+                $m = mb_strtolower(trim((string)$mes));
+                $dupQuery->where(function($q) use ($m, $anio) {
+                    $q->where(function($q2) use ($m, $anio) {
+                        $q2->where('mes', $m);
+                        if ($anio !== null && (int)$anio > 0) {
+                            $q2->where(function($q3) use ($anio) {
+                                $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                            });
+                        }
+                    })->orWhere(function($q4) {
+                        $q4->whereNull('mes')->orWhere('mes', '');
+                    });
+                });
+            } else {
+                $dupQuery->where(function($q){ $q->whereNull('mes')->orWhere('mes',''); });
+            }
+            if ($excludeId) $dupQuery->where('id', '!=', $excludeId);
+
+            if ($dupQuery->exists()) {
+                return true;
+            }
+        } catch (\Throwable $_e) {
+            // ignore duplicate-check failures and continue to overlap checks
+        }
+
+        // DB-level time overlap check: quickly detect any existing pattern with hora_inicio < new_end
+        // AND hora_fin > new_start using the same scoping (doctor, normalized day, mes/anio, sede scoping).
+        try {
+            $timeQuery = clone $query;
+            $timeQuery->where('hora_inicio', '<', $end)->where('hora_fin', '>', $start);
+            if ($timeQuery->exists()) {
+                return true;
+            }
+        } catch (\Throwable $_e) {
+            // If DB-level check fails, fall back to PHP candidate scanning below.
+        }
+
+        // Fall back: fetch candidates and perform strict PHP comparison to avoid DB edge-case mismatches
+        $candidates = $query->get();
+
+        $tNewStart = static::timeToSeconds($start);
+        $tNewEnd = static::timeToSeconds($end);
+        foreach ($candidates as $existing) {
+            $exStart = (string)($existing->hora_inicio ?? '');
+            $exEnd = (string)($existing->hora_fin ?? '');
+            if ($exStart === '' || $exEnd === '') continue;
+            $tExStart = static::timeToSeconds($exStart);
+            $tExEnd = static::timeToSeconds($exEnd);
+            if ($tExStart === null || $tExEnd === null || $tNewStart === null || $tNewEnd === null) continue;
+
+            // Overlap condition (strict): existing.start < new.end AND existing.end > new.start
+            $conflict = static::intervalsOverlap($tExStart, $tExEnd, $tNewStart, $tNewEnd);
+            if ($conflict) {
+                // Log debug info to temp file to help diagnose adjacency/overlap issues
+                try {
+                    $logFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'citas_overlap.log';
+                    $payload = [
+                        'timestamp' => date('c'),
+                        'doctor_id' => $doctorId,
+                        'called_location' => $locationId,
+                        'normalized_location' => $loc,
+                        'dia_semana' => $diaSemana,
+                        'dia_semana_norm' => $diaSemanaNorm,
+                        'new_start' => $start,
+                        'new_end' => $end,
+                        'candidate_id' => $existing->id ?? null,
+                        'candidate_sede' => $existing->sede_id ?? null,
+                        'candidate_start' => $exStart,
+                        'candidate_end' => $exEnd,
+                        'tExStart' => $tExStart,
+                        'tExEnd' => $tExEnd,
+                        'tNewStart' => $tNewStart,
+                        'tNewEnd' => $tNewEnd,
+                    ];
+                    file_put_contents($logFile, json_encode($payload, JSON_UNESCAPED_UNICODE) . PHP_EOL, FILE_APPEND | LOCK_EX);
+                } catch (\Throwable $e) {
+                    // swallow logging errors
+                }
                 return true;
             }
         }
-        
+
+        // If no candidates produced a conflict, return false
         return false;
     }
     
-    public static function createSchedule($doctorId, $sedeId, $fecha, $startTime, $endTime, $observaciones = '')
+    public static function for(int $doctorId, int $locationId, int $weekday): array
     {
-        $db = \App\Core\SimpleDatabase::getInstance();
-        
-        $data = [
-            'doctor_id' => $doctorId,
-            'sede_id' => $sedeId ?: null,
-            'fecha' => $fecha,
-            'hora_inicio' => $startTime,
-            'hora_fin' => $endTime,
-            'activo' => 1,
-            'observaciones' => $observaciones
-        ];
-        
-        return $db->insert('horarios_medicos', $data);
+        // Método obsoleto mantenido para compatibilidad
+        return [];
     }
-    
-    public static function forDate($doctorId, $sedeId, $fecha)
+
+    /**
+     * Convert a time-like string (HH:MM[:SS][.micro]) to seconds since midnight, or null on failure.
+     */
+    public static function timeToSeconds(?string $time): ?int
     {
-        $db = \App\Core\SimpleDatabase::getInstance();
-        
-        $sql = "SELECT * FROM horarios_medicos 
-                WHERE doctor_id = ? AND fecha = ? AND activo = 1";
-        $params = [$doctorId, $fecha];
-        
-        if ($sedeId) {
-            $sql .= " AND sede_id = ?";
-            $params[] = $sedeId;
+        if ($time === null) return null;
+        $time = trim($time);
+        if ($time === '') return null;
+        if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2})(?:[\.\,]\d+)?)?$/', $time, $m)) {
+            $h = (int)$m[1];
+            $min = (int)$m[2];
+            $sec = isset($m[3]) && $m[3] !== '' ? (int)$m[3] : 0;
+            return $h * 3600 + $min * 60 + $sec;
         }
-        
-        $sql .= " ORDER BY hora_inicio ASC";
-        
-        return $db->fetchAll($sql, $params);
+        $ts = @strtotime('1970-01-01 ' . $time);
+        if ($ts === false) return null;
+        $dt = new \DateTime('@' . $ts);
+        return ((int)$dt->format('H')) * 3600 + ((int)$dt->format('i')) * 60 + (int)$dt->format('s');
+    }
+
+    /**
+     * Decide whether two time intervals overlap. All inputs are seconds-since-midnight.
+     * Uses strict overlap: A.start < B.end AND A.end > B.start
+     */
+    public static function intervalsOverlap(int $aStart, int $aEnd, int $bStart, int $bEnd): bool
+    {
+        return ($aStart < $bEnd && $aEnd > $bStart);
+    }
+
+    /**
+     * Return candidate patterns (existing DB records) that should be considered when checking overlaps
+     * for a given doctor/day and optional location/month/year.
+     * This mirrors the scoping used by patternsOverlap but returns the actual candidates for PHP checks.
+     */
+    public static function candidatesForPattern(int $doctorId, ?int $locationId, string $diaSemana, ?string $mes = null, ?int $anio = null, ?int $excludeId = null)
+    {
+        $normalize = function(string $s): string {
+            $s = mb_strtolower(trim($s));
+            $s = str_replace(['á','é','í','ó','ú','ü'], ['a','e','i','o','u','u'], $s);
+            return $s;
+        };
+        $diaSemanaNorm = $normalize($diaSemana);
+        $loc = ($locationId !== null && (int)$locationId > 0) ? (int)$locationId : null;
+
+        $query = static::where('doctor_id', $doctorId)
+                    ->whereRaw("LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(dia_semana, 'á', 'a'), 'é', 'e'), 'í', 'i'), 'ó', 'o'), 'ú', 'u')) = ?", [$diaSemanaNorm])
+                    ->active();
+
+        if ($loc !== null) {
+            $query->where(function($q) use ($loc) {
+                $q->where('sede_id', $loc)->orWhereNull('sede_id');
+            });
+        }
+
+        if ($mes !== null && trim((string)$mes) !== '') {
+            $m = mb_strtolower(trim((string)$mes));
+            $query->where(function($q) use ($m, $anio) {
+                $q->where(function($q2) use ($m, $anio) {
+                    $q2->where('mes', $m);
+                    if ($anio !== null && (int)$anio > 0) {
+                        $q2->where(function($q3) use ($anio) {
+                            $q3->whereNull('anio')->orWhere('anio', (int)$anio);
+                        });
+                    }
+                })->orWhere(function($q4) {
+                    $q4->whereNull('mes')->orWhere('mes', '');
+                });
+            });
+        }
+
+        if ($excludeId) $query->where('id', '!=', $excludeId);
+
+        return $query->get();
     }
     
-    public static function deleteSchedule($id)
+    // Accessors para compatibilidad
+    public function getDoctorNameAttribute(): ?string
     {
-        $db = \App\Core\SimpleDatabase::getInstance();
-        return $db->delete('horarios_medicos', 'id = ?', [$id]);
+        return $this->doctor?->user?->nombre;
+    }
+    
+    public function getDoctorLastnameAttribute(): ?string
+    {
+        return $this->doctor?->user?->apellido;
+    }
+    
+    public function getDoctorEmailAttribute(): ?string
+    {
+        return $this->doctor?->user?->email;
+    }
+    
+    public function getSedeNombreAttribute(): ?string
+    {
+        return $this->sede?->nombre_sede;
+    }
+    
+    public function getDiaNombreAttribute(): ?string
+    {
+        $date = new \DateTime($this->fecha);
+        $days = ['Sunday' => 'Domingo', 'Monday' => 'Lunes', 'Tuesday' => 'Martes', 
+                 'Wednesday' => 'Miércoles', 'Thursday' => 'Jueves', 'Friday' => 'Viernes', 'Saturday' => 'Sábado'];
+        return $days[$date->format('l')] ?? $date->format('l');
     }
 }

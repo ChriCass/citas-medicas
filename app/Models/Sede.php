@@ -1,24 +1,28 @@
 <?php
 namespace App\Models;
 
-class Sede extends SimpleModel
+use App\Core\SimpleDatabase;
+
+class Sede extends BaseModel
 {
-    public function __construct()
+    /** @var SimpleDatabase|null DB compatibility instance used by legacy static methods */
+    protected $db;
+
+    public function __construct(array $attributes = [])
     {
-        parent::__construct();
+        parent::__construct($attributes);
+        // Keep SimpleDatabase available for existing static/helper methods that expect $instance->db
+        $this->db = SimpleDatabase::getInstance();
         $this->table = 'sedes';
         $this->fillable = [
             'nombre_sede', 'direccion', 'telefono'
         ];
     }
 
-    // Propiedades públicas para evitar warnings de PHP 8.4
-    public $id;
-    public $nombre_sede;
-    public $direccion;
-    public $telefono;
-    public $creado_en;
-    public $actualizado_en;
+    // NOTE: do not declare public properties that match DB columns here.
+    // Eloquent stores attributes in the internal $attributes array and
+    // declaring public properties with the same names would shadow them
+    // and prevent attribute access (e.g. $sede->nombre_sede).
 
     // Métodos estáticos para compatibilidad
     public static function getAll(): array

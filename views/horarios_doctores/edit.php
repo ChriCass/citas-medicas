@@ -94,9 +94,19 @@ if (!$selectedAnio) $selectedAnio = (int)date('Y');
     <select id="doctor_top" class="input" style="width:100%;" disabled>
       <option value="">-- Seleccionar doctor --</option>
       <?php foreach (($doctors ?? []) as $d): ?>
-        <?php $did = (int)($d->id ?? 0); ?>
+        <?php $did = (int)($d->id ?? ($d['id'] ?? 0)); ?>
+        <?php
+          // Support both Eloquent models (with ->user) and legacy flat arrays returned by Doctor::getAll()
+          if (is_array($d)) {
+            $docNombre = trim((string)($d['user_nombre'] ?? '') . ' ' . (string)($d['user_apellido'] ?? ''));
+            $docEmail = (string)($d['email'] ?? $d['user_email'] ?? '');
+          } else {
+            $docNombre = trim((string)($d->user->nombre ?? '') . ' ' . (string)($d->user->apellido ?? ''));
+            $docEmail = (string)($d->user->email ?? '');
+          }
+        ?>
         <option value="<?= $did ?>" <?= ((string)$did === (string)$doctorId) ? 'selected' : '' ?>>
-          <?= htmlspecialchars(($d->user->nombre ?? '') . ' ' . ($d->user->apellido ?? '') . ' — ' . ($d->user->email ?? '')) ?>
+          <?= htmlspecialchars($docNombre . ($docEmail !== '' ? ' — ' . $docEmail : '')) ?>
         </option>
       <?php endforeach; ?>
     </select>

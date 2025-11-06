@@ -15,17 +15,38 @@ $router->get('/citas/create', [AppointmentController::class, 'create'], ['auth']
 $router->post('/citas', [AppointmentController::class, 'store'], ['auth']);
 $router->get('/citas/{id}/edit', [AppointmentController::class, 'edit'], ['auth']);
 $router->post('/citas/{id}/update', [AppointmentController::class, 'update'], ['auth']);
+$router->get('/citas/today', [AppointmentController::class, 'index'], ['auth']);
 
 $router->post('/citas/{id}/cancel',   [AppointmentController::class, 'cancel'], ['auth']);
 $router->post('/citas/{id}/status',   [AppointmentController::class, 'updateStatus'], ['auth']);   // cashier/superadmin
 $router->post('/citas/{id}/attended', [AppointmentController::class, 'markAttended'], ['auth']);   // doctor
 $router->post('/citas/{id}/payment',  [AppointmentController::class, 'updatePayment'], ['auth']);  // cashier
+$router->post('/citas/{id}/ausente',  [AppointmentController::class, 'markAbsent'], ['auth']); // marcar ausente (médico) - botón en la vista today
+
+// Atención de citas: mostrar formulario y procesar (médico)
+$router->get('/citas/{id}/attend',  [AppointmentController::class, 'attendForm'], ['auth']);
+$router->post('/citas/{id}/attend', [AppointmentController::class, 'attendStore'], ['auth']);
+
+// Editar cita (médico)
+$router->get('/citas/{id}/edit',  [AppointmentController::class, 'editForm'], ['auth']);
+$router->post('/citas/{id}/edit', [AppointmentController::class, 'editStore'], ['auth']);
 
 // Horarios Doctores (solo superadmin; el controlador valida el rol)
 $router->get('/doctor-schedules',          [DoctorScheduleController::class, 'index'],  ['auth']);
 $router->get('/doctor-schedules/create',   [DoctorScheduleController::class, 'create'], ['auth']);
 $router->post('/doctor-schedules',         [DoctorScheduleController::class, 'store'],  ['auth']);
 $router->post('/doctor-schedules/{id}/delete', [DoctorScheduleController::class, 'destroy'], ['auth']);
+// Ruta para asignación masiva de horarios (UC-09)
+$router->post('/doctor-schedules/assign',  [DoctorScheduleController::class, 'assign'], ['auth']);
+// Editar/actualizar patrón y aplicar al calendario
+$router->get('/doctor-schedules/{doctor_id}/{sede_id}', [DoctorScheduleController::class, 'editByDoctorSede'], ['auth']);
+// Edit by doctor/sede for a specific month/year (new route)
+$router->get('/doctor-schedules/{doctor_id}/{sede_id}/{month}/{year}', [DoctorScheduleController::class, 'editByDoctorSedeMonth'], ['auth']);
+$router->get('/doctor-schedules/{id}/edit',   [DoctorScheduleController::class, 'edit'],   ['auth']);
+$router->post('/doctor-schedules/{id}/update', [DoctorScheduleController::class, 'update'], ['auth']);
+$router->post('/doctor-schedules/{id}/apply',  [DoctorScheduleController::class, 'apply'],  ['auth']);
+// Endpoint AJAX: obtener sedes de un doctor
+$router->get('/doctors/{id}/sedes', [DoctorScheduleController::class, 'doctorSedes'], ['auth']);
 
 // Gestión de Pagos (solo cajeros)
 $router->get('/pagos',                     [PaymentController::class, 'index'],         ['auth', 'cashier']);
