@@ -35,15 +35,7 @@ class AppointmentController
             if ($doctor) {
                 if ($todayParam) {                     
                     $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
-                    $appts = Appointment::with([
-                        'paciente.user', 
-                        'doctor.user', 
-                        'doctor.especialidad', 
-                        'sede'
-                    ])->where('doctor_id', $doctor['id'])
-                      ->where('fecha', $today)
-                      ->orderBy('hora_inicio', 'asc')
-                      ->get();
+                    $appts = Appointment::doctorCitasToday($doctor['id'], $today);
                 } else {
                     $appts = Appointment::doctorcitas($doctor['id']);
                 }
@@ -283,20 +275,19 @@ class AppointmentController
             return $res->redirect('/citas')->with('error', 'No se puede modificar esta cita. Debe ser futura y con al menos 24 horas de anticipación.');
         }
         
-        // Obtener datos de la cita
-        $appointment = new Appointment();
-        $cita = $appointment->find($id);
-        
-        if (!$cita) {
+        // Obtener datos de la cita (usar Eloquent find y convertir a array para compatibilidad con las vistas)
+        $citaModel = Appointment::find($id);
+        if (!$citaModel) {
             return $res->redirect('/citas')->with('error', 'Cita no encontrada');
         }
+        $cita = (is_object($citaModel) && method_exists($citaModel, 'toArray')) ? $citaModel->toArray() : $citaModel;
         
         // Obtener datos para el formulario
         $doctores = Doctor::getAll();
         $sedes = Sede::getAll();
         $especialidades = Especialidad::getAll();
         
-        return $res->view('citas/edit', [
+    return $res->view('consultas/edit', [
             'title' => 'Modificar Cita',
             'cita' => $cita,
             'doctores' => $doctores,
@@ -384,7 +375,6 @@ class AppointmentController
         return $res->redirect('/citas/today');
     }
 
-
     /** Mostrar formulario para atender una cita (médico) */
     public function attendForm(Request $req, Response $res)
     {
@@ -446,7 +436,7 @@ class AppointmentController
             $consultaDiagnosticos = [];
         }
 
-        return $res->view('citas/attend', [
+    return $res->view('consultas/attend', [
             'title' => 'Atender cita',
             'appointment' => $appointment,
             'consulta' => $consulta,
@@ -517,7 +507,7 @@ class AppointmentController
                         ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                         ->get()->map(function($r){ return (array)$r; })->toArray();
                 }
-                return $res->view('citas/attend', [
+                return $res->view('consultas/attend', [
                     'error' => 'Debe seleccionar al menos un diagnóstico existente y completar el estado postconsulta. No está permitido crear diagnósticos nuevos desde este formulario.',
                     'appointment' => Appointment::with(['paciente.user'])->find($id),
                     'consulta' => $consultaObj,
@@ -541,7 +531,7 @@ class AppointmentController
                             ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                             ->get()->map(function($r){ return (array)$r; })->toArray();
                     }
-                    return $res->view('citas/attend', [
+                    return $res->view('consultas/attend', [
                         'error' => 'Uno o más diagnósticos seleccionados no existen. Por favor selecciona diagnósticos válidos.',
                         'appointment' => Appointment::with(['paciente.user'])->find($id),
                         'consulta' => $consultaObj,
@@ -668,7 +658,7 @@ class AppointmentController
                     ->select('diagnosticos.id', DB::raw("COALESCE(diagnosticos.nombre_enfermedad, '') as nombre"))
                     ->get()->map(function($r){ return (array)$r; })->toArray();
             }
-            return $res->view('citas/attend', [
+            return $res->view('consultas/attend', [
                 'error' => 'Error al guardar la consulta: ' . $e->getMessage(),
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
                 'consulta' => $consultaObj,
@@ -735,7 +725,7 @@ class AppointmentController
             $consultaDiagnosticos = [];
         }
 
-        return $res->view('citas/edit', [
+    return $res->view('consultas/edit', [
             'title' => 'Editar cita',
             'appointment' => $appointmentArr,
             'consulta' => $consultaArr,
@@ -793,7 +783,7 @@ class AppointmentController
         // Validaciones mínimas
         $allowedPost = ['No problemático','Pasivo','Problemático'];
         if (count($diagnosticosInput) <= 0) {
-            return $res->view('citas/edit', [
+            return $res->view('consultas/edit', [
                 'error' => 'Debe seleccionar al menos un diagnóstico existente.',
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
                 'consulta' => Consulta::findByCitaId($id),
@@ -804,7 +794,7 @@ class AppointmentController
             ]);
         }
         if (!in_array($estadoPost, $allowedPost, true)) {
-            return $res->view('citas/edit', [
+            return $res->view('consultas/edit', [
                 'error' => 'Estado postconsulta inválido',
                 'appointment' => Appointment::with(['paciente.user'])->find($id),
                 'consulta' => Consulta::findByCitaId($id),

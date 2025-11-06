@@ -1,7 +1,7 @@
 <?php if(($_SESSION['user']['rol'] ?? '') !== 'doctor'): ?>
   <div class="alert mt-2">No tienes acceso a esta pantalla.</div>
 <?php else: ?>
-  <h1>Atender cita</h1>
+  <h1>Editar cita</h1>
 
   <style>
     .invalid { border-color: #e53e3e !important; box-shadow: 0 0 0 3px rgba(229,62,62,0.06); }
@@ -11,6 +11,7 @@
     .input-with-toggle { position: relative; }
     .input-with-toggle .toggle-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#666; background:transparent; border:none; }
     .input-with-toggle .toggle-btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(0,0,0,0.06); }
+    #diagnostico_input { padding-right: 38px; }
   </style>
 
   <?php if (!empty($error)): ?>
@@ -25,6 +26,7 @@
     $fmtDate = function($v){
       if ($v instanceof \DateTimeInterface) return $v->format('d-m-Y');
       if (is_string($v) && $v !== '') {
+        // Si viene como 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS'
         $ts = strtotime($v);
         if ($ts !== false) return date('d-m-Y', $ts);
         return $v;
@@ -43,17 +45,24 @@
     };
   ?>
 
+  <?php
+    // Nombre/apellido paciente - preferir campos planos si están presentes, si no intentar rutas anidadas
+    $pacienteNombre = $a['paciente_nombre'] ?? (isset($a['paciente']['user']['nombre']) ? $a['paciente']['user']['nombre'] : '');
+    $pacienteApellido = $a['paciente_apellido'] ?? (isset($a['paciente']['user']['apellido']) ? $a['paciente']['user']['apellido'] : '');
+    $citaFecha = $a['fecha'] ?? ($a['fecha'] ?? '');
+    $citaHora = $a['hora_inicio'] ?? ($a['hora_inicio'] ?? '');
+    $citaMotivo = $a['razon'] ?? '';
+  ?>
   <div class="card">
-    <div><strong>Paciente:</strong> <?= htmlspecialchars($a['paciente_nombre'] ?? ($a->paciente?->user?->nombre ?? '')) ?> <?= htmlspecialchars($a['paciente_apellido'] ?? ($a->paciente?->user?->apellido ?? '')) ?></div>
-    <div><strong>Fecha:</strong> <?= htmlspecialchars($fmtDate($a['fecha'] ?? ($a->fecha ?? ''))) ?></div>
-    <div><strong>Hora:</strong> <?= htmlspecialchars($fmtTime($a['hora_inicio'] ?? ($a->hora_inicio ?? ''))) ?></div>
-    <!-- <div><strong>Motivo:</strong> <?= htmlspecialchars($a['razon'] ?? '') ?></div> -->
+    <div><strong>Paciente:</strong> <?= htmlspecialchars($pacienteNombre) ?> <?= htmlspecialchars($pacienteApellido) ?></div>
+    <div><strong>Fecha:</strong> <?= htmlspecialchars($fmtDate($citaFecha)) ?></div>
+    <div><strong>Hora:</strong> <?= htmlspecialchars($fmtTime($citaHora)) ?></div>
+    <div><strong>Motivo:</strong> <?= htmlspecialchars($citaMotivo) ?></div>
   </div>
 
-  <form method="POST" action="/citas/<?= (int)$a['id'] ?>/attend">
+  <form method="POST" action="/citas/<?= (int)$a['id'] ?>/edit">
     <input type="hidden" name="recetas_payload" id="recetas_payload" value="">
     <div id="client_error" class="alert error mt-2" style="display:none"></div>
-
     <div class="row" style="position:relative;">
       <label class="label">Diagnóstico(s)</label>
       <div id="diagnosticos_container">
@@ -67,7 +76,7 @@
 
     <div class="row">
       <label class="label">Observaciones</label>
-      <textarea class="input" style="resize: none; height:80px" name="observaciones"><?= htmlspecialchars($c['observaciones'] ?? ($c->observaciones ?? '')) ?></textarea>
+  <textarea class="input" style="resize: none; height:80px" name="observaciones"><?= htmlspecialchars($c['observaciones'] ?? '') ?></textarea>
       <div id="err_observaciones" class="field-error"></div>
     </div>
 
@@ -97,7 +106,7 @@
       <select class="input" name="estado_postconsulta">
         <?php
           $opts = ['No problemático','Pasivo','Problemático'];
-          $sel = $c['estado_postconsulta'] ?? ($c->estado_postconsulta ?? '');
+          $sel = $c['estado_postconsulta'] ?? '';
         ?>
         <option value="">— Selecciona —</option>
         <?php foreach ($opts as $o): ?>
@@ -108,11 +117,10 @@
     </div>
 
     <div class="row">
-      <button class="btn primary" type="submit" name="marcar_estado" value="atendido">Marcar como Atendido</button>
+      <button class="btn primary" type="submit" name="save_changes" value="save">Guardar cambios</button>
     </div>
   </form>
-
-  <script>
+    <script>
   (function(){
     // Diagnósticos dinámicos: permite múltiples diagnósticos (mínimo 1)
     const serverDiagnosticos = <?= json_encode($diagnosticos ?? []) ?> || [];
@@ -143,11 +151,11 @@
 
       const inputWrap = document.createElement('div'); inputWrap.className = 'input-with-toggle';
       const input = document.createElement('input'); input.type = 'text'; input.className = 'input diagnostico-input'; input.autocomplete = 'on';
-      input.value = initial.nombre_enfermedad || initial.nombre || '';
+      input.value = initial.nombre || '';
       input.setAttribute('aria-haspopup','listbox'); input.setAttribute('aria-expanded','false');
       const toggle = document.createElement('button'); toggle.type='button'; toggle.className='toggle-btn'; toggle.title='Mostrar lista de diagnósticos';
       toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9l6 6l6 -6" /></svg>';
-      const hid = document.createElement('input'); hid.type='hidden'; hid.name='diagnosticos[][id]'; hid.className='diagnostico-id'; hid.value = initial.id || initial.diagnostico_id || '';
+      const hid = document.createElement('input'); hid.type='hidden'; hid.name='diagnosticos[][id]'; hid.className='diagnostico-id'; hid.value = initial.id || '';
 
       inputWrap.appendChild(input); inputWrap.appendChild(toggle); inputWrap.appendChild(hid);
       wrapper.appendChild(inputWrap);
@@ -196,9 +204,7 @@
       function hide(){ dropdown.style.display='none'; selected=-1; items=[]; }
 
       async function search(q){
-        if (serverDiagnosticos && serverDiagnosticos.length > 0){
-          items = serverDiagnosticos.filter(d => (d.nombre_enfermedad||d.nombre||'').toLowerCase().includes((q||'').toLowerCase())); selected=-1; render(); return;
-        }
+        if (serverDiagnosticos && serverDiagnosticos.length > 0){ items = serverDiagnosticos.filter(d => (d.nombre_enfermedad||d.nombre||'').toLowerCase().includes((q||'').toLowerCase())); selected=-1; render(); return; }
         if (!q || q.length < 1) { hide(); return; }
         try{
           const url = `/api/v1/diagnosticos?q=${encodeURIComponent(q)}`;
@@ -232,9 +238,8 @@
     // Prefill: si hay diagnósticos guardados en servidor (detalle_consulta)
     const serverDiagnosticosPrefill = <?= json_encode($consulta_diagnosticos ?? ($c['diagnosticos'] ?? ($c->diagnosticos ?? []))) ?> || [];
     if (Array.isArray(serverDiagnosticosPrefill) && serverDiagnosticosPrefill.length > 0) {
-      serverDiagnosticosPrefill.forEach(function(d){ diagnosticosContainer.appendChild(createRow({id:d.id, nombre_enfermedad:d.nombre})); });
+      serverDiagnosticosPrefill.forEach(function(d){ diagnosticosContainer.appendChild(createRow({id:d.id, nombre:d.nombre})); });
     } else {
-      // al menos una fila vacía
       diagnosticosContainer.appendChild(createRow());
     }
 
@@ -255,7 +260,24 @@
       });
     })();
 
-    // ---------- Recetas dynamic UI (original code preserved) ----------
+    // Clear individual field error when user interacts with it
+    const diagEl = document.getElementById('diagnostico_input');
+    if (diagEl) {
+      diagEl.addEventListener('input', ()=>{
+        diagEl.classList.remove('invalid');
+        const e = document.getElementById('err_diagnostico'); if (e){ e.textContent=''; e.classList.remove('visible'); }
+      });
+    }
+
+    // No single 'receta' textarea anymore; per-row inputs are handled dynamically.
+
+    const obsEl = document.querySelector('textarea[name="observaciones"]'); if (obsEl) obsEl.addEventListener('input', ()=>{ obsEl.classList.remove('invalid'); const e=document.getElementById('err_observaciones'); if(e){ e.textContent=''; e.classList.remove('visible'); } });
+    const estadoEl = document.querySelector('select[name="estado_postconsulta"]'); if (estadoEl) estadoEl.addEventListener('change', ()=>{ estadoEl.classList.remove('invalid'); const e=document.getElementById('err_estado'); if(e){ e.textContent=''; e.classList.remove('visible'); } });
+
+    // Nota: la lógica de autocompletado está encapsulada por fila en attachAutocomplete.
+    // Evitamos duplicar manejadores globales que referencian variables locales.
+
+    // ---------- Recetas dynamic UI ----------
     const recetasContainer = document.getElementById('recetas_container');
     const addRecetaBtn = document.getElementById('add_receta_btn');
     // medicamentos pasados desde servidor
@@ -276,35 +298,32 @@
 
     function renderRecetaRow(data){
       const idx = nextRecetaIdx++;
-      // create a table row with cells for medicamento, indicacion, duracion and actions
       const tbody = recetasContainer.querySelector('tbody') || recetasContainer;
       const tr = document.createElement('tr'); tr.className = 'receta-row';
 
-      // hidden id (preserva id si viene)
       const hidId = document.createElement('input'); hidId.type = 'hidden'; hidId.name = 'recetas[][id]'; hidId.value = data?.id ? data.id : '';
 
-  const tdMed = document.createElement('td'); tdMed.style.padding = '8px 6px'; tdMed.style.width = '280px'; tdMed.style.verticalAlign = 'middle';
-  const sel = createMedicamentoSelect(`recetas[][id_medicamento]`, data?.id_medicamento ?? data?.medicamento?.id ?? ''); sel.style.width = '100%'; sel.style.boxSizing = 'border-box';
-  tdMed.appendChild(sel);
+      const tdMed = document.createElement('td'); tdMed.style.padding = '6px';
+      const sel = createMedicamentoSelect(`recetas[][id_medicamento]`, data?.id_medicamento ?? data?.medicamento?.id ?? ''); sel.style.width = '100%';
+      tdMed.appendChild(sel);
 
   const tdInd = document.createElement('td'); tdInd.style.padding = '8px 6px'; tdInd.style.verticalAlign = 'middle';
-  const ind = document.createElement('textarea'); ind.name = `recetas[][indicacion]`; ind.className='input'; ind.style.width='100%'; ind.style.height='48px'; ind.style.resize='none'; ind.style.boxSizing='border-box'; ind.value = data?.indicacion ?? '';
+  const ind = document.createElement('textarea'); ind.name = `recetas[][indicacion]`; ind.className='input'; ind.style.width='100%'; ind.style.height='64px'; ind.style.resize = 'none'; ind.style.boxSizing = 'border-box'; ind.value = data?.indicacion ?? '';
   tdInd.appendChild(ind);
 
-  const tdDur = document.createElement('td'); tdDur.style.padding = '8px 6px'; tdDur.style.width = '140px'; tdDur.style.verticalAlign = 'middle';
-  const dur = document.createElement('input'); dur.type='text'; dur.name = `recetas[][duracion]`; dur.className='input'; dur.style.width='100%'; dur.style.boxSizing='border-box'; dur.value = data?.duracion ?? '';
+  const tdDur = document.createElement('td'); tdDur.style.padding = '8px 4px'; tdDur.style.width = '120px'; tdDur.style.verticalAlign = 'middle';
+  const dur = document.createElement('input'); dur.type='text'; dur.name = `recetas[][duracion]`; dur.className='input'; dur.style.width='100%'; dur.style.boxSizing = 'border-box'; dur.value = data?.duracion ?? '';
   tdDur.appendChild(dur);
-  // tighten spacing between duration and action columns
-  tdDur.style.padding = '8px 4px'; tdDur.style.width = '120px';
 
   const tdAct = document.createElement('td'); tdAct.style.padding = '8px 4px'; tdAct.style.textAlign = 'center'; tdAct.style.verticalAlign = 'middle'; tdAct.style.width = '80px';
-  const del = document.createElement('button'); del.type = 'button'; del.className = 'btn small danger'; del.textContent = 'Eliminar'; del.setAttribute('aria-label','Eliminar receta'); del.style.marginLeft = '6px'; del.addEventListener('click', ()=>{ tr.remove(); });
+  const del = document.createElement('button'); del.type='button'; del.className='btn small danger'; del.textContent='Eliminar'; del.setAttribute('aria-label','Eliminar receta'); del.style.marginLeft = '6px'; del.addEventListener('click', ()=>{ tr.remove(); });
   tdAct.appendChild(del);
-    tr.appendChild(hidId);
-    tr.appendChild(tdMed);
-    tr.appendChild(tdInd);
-    tr.appendChild(tdDur);
-    tr.appendChild(tdAct);
+
+      tr.appendChild(hidId);
+      tr.appendChild(tdMed);
+      tr.appendChild(tdInd);
+      tr.appendChild(tdDur);
+      tr.appendChild(tdAct);
 
       tbody.appendChild(tr);
       return tr;
@@ -327,7 +346,15 @@
           console.error('Error renderizando fila de receta, fallback', err);
           const tbody = recetasContainer.querySelector('tbody') || recetasContainer;
           const row = document.createElement('tr'); row.className='receta-row';
-          row.innerHTML = '<td style="padding:8px 6px"><select name="recetas[][id_medicamento]" class="input"><option value="">— Selecciona medicamento —</option></select></td><td style="padding:8px 6px"><textarea name="recetas[][indicacion]" class="input" style="width:100%;height:48px;resize:none;box-sizing:border-box"></textarea></td><td style="padding:8px 4px;width:120px;vertical-align:middle"><input type="text" name="recetas[][duracion]" class="input" style="width:100%;box-sizing:border-box"></td><td style="padding:8px 4px;text-align:center;vertical-align:middle;width:80px"><button type="button" class="btn small danger">Eliminar</button></td>';
+          row.innerHTML = '<td style="padding:8px 6px"><select name="recetas[][id_medicamento]" class="input"></select></td><td style="padding:8px 6px"><textarea name="recetas[][indicacion]" class="input" style="width:100%;height:48px;resize:none;box-sizing:border-box"></textarea></td><td style="padding:8px 4px;width:120px;vertical-align:middle"><input type="text" name="recetas[][duracion]" class="input" style="width:100%;box-sizing:border-box"></td><td style="padding:8px 4px;text-align:center;vertical-align:middle;width:80px"><button type="button" class="btn small danger">Eliminar</button></td>';
+          // populate select options from medicamentosList so fallback rows are usable
+          const sel = row.querySelector('select[name="recetas[][id_medicamento]"]');
+          if (sel) {
+            const empty = document.createElement('option'); empty.value=''; empty.textContent='— Selecciona medicamento —'; sel.appendChild(empty);
+            medicamentosList.forEach(m => {
+              const o = document.createElement('option'); o.value = m.id; o.textContent = m.nombre; sel.appendChild(o);
+            });
+          }
           tbody.appendChild(row);
           const del = row.querySelector('button'); if (del) del.addEventListener('click', ()=> row.remove());
         }
@@ -340,7 +367,6 @@
       const rows = Array.from(document.querySelectorAll('.receta-row'));
       const out = rows.map(r => {
         const idEl = r.querySelector('input[name="recetas[][id]"]');
-        // select may be nested inside td
         const medEl = r.querySelector('select[name="recetas[][id_medicamento]"]');
         const indEl = r.querySelector('textarea[name="recetas[][indicacion]"]');
         const durEl = r.querySelector('input[name="recetas[][duracion]"]');

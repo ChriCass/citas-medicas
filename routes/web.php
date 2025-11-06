@@ -27,9 +27,18 @@ $router->post('/citas/{id}/ausente',  [AppointmentController::class, 'markAbsent
 $router->get('/citas/{id}/attend',  [AppointmentController::class, 'attendForm'], ['auth']);
 $router->post('/citas/{id}/attend', [AppointmentController::class, 'attendStore'], ['auth']);
 
+// Duplicate the attend/edit endpoints under /consultas/* for clearer URLs and
+// to match views located in views/consultas/*. These delegate to the same
+// controller methods so the app logic is unchanged.
+$router->get('/consultas/{id}/attend',  [AppointmentController::class, 'attendForm'], ['auth']);
+$router->post('/consultas/{id}/attend', [AppointmentController::class, 'attendStore'], ['auth']);
+
 // Editar cita (médico)
 $router->get('/citas/{id}/edit',  [AppointmentController::class, 'editForm'], ['auth']);
 $router->post('/citas/{id}/edit', [AppointmentController::class, 'editStore'], ['auth']);
+// Also expose the edit form under /consultas for clarity and to match views
+$router->get('/consultas/{id}/edit',  [AppointmentController::class, 'editForm'], ['auth']);
+$router->post('/consultas/{id}/edit', [AppointmentController::class, 'editStore'], ['auth']);
 
 // Horarios Doctores (solo superadmin; el controlador valida el rol)
 $router->get('/doctor-schedules',          [DoctorScheduleController::class, 'index'],  ['auth']);

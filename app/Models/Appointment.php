@@ -40,25 +40,20 @@ class Appointment extends Model
         return $this->hasMany(Payment::class, 'cita_id');
     }
     
-    public function find($id)
-    {
-        $db = \App\Core\SimpleDatabase::getInstance();
-        return $db->fetchOne("SELECT * FROM citas WHERE id = ?", [$id]);
-    }
     
     public static function updateStatus($id, $status): bool
     {
         $allowed = ['pendiente','confirmado','atendido','cancelado'];
-        if (!in_array($estado,$allowed,true)) {
+        if (!in_array($status, $allowed, true)) {
             return false;
         }
-        
+
         $appointment = static::find($id);
         if (!$appointment) {
             return false;
         }
-        
-        $appointment->estado = $estado;
+
+        $appointment->estado = $status;
         return $appointment->save();
     }
     
@@ -211,6 +206,47 @@ class Appointment extends Model
                 ORDER BY c.fecha DESC, c.hora_inicio DESC";
         
         $appointments = $db->fetchAll($sql, [$doctorId]);
+        
+        // Convertir a formato plano para la vista
+        return array_map(function($appointment) {
+            return [
+                'id' => $appointment['id'],
+                'fecha' => $appointment['fecha'],
+                'hora_inicio' => $appointment['hora_inicio'],
+                'hora_fin' => $appointment['hora_fin'],
+                'razon' => $appointment['razon'],
+                'estado' => $appointment['estado'],
+                'pago' => $appointment['pago'],
+                'paciente_nombre' => $appointment['paciente_nombre'] ?? '',
+                'paciente_apellido' => $appointment['paciente_apellido'] ?? '',
+                'doctor_nombre' => $appointment['doctor_nombre'] ?? '',
+                'doctor_apellido' => $appointment['doctor_apellido'] ?? '',
+                'especialidad_nombre' => $appointment['especialidad_nombre'] ?? 'N/A',
+                'sede_nombre' => $appointment['nombre_sede'] ?? 'N/A'
+            ];
+        }, $appointments);
+    }
+    
+    public static function doctorCitasToday($doctorId, $date)
+    {
+        $db = \App\Core\SimpleDatabase::getInstance();
+        
+        $sql = "SELECT c.*, 
+                       pu.nombre as paciente_nombre, pu.apellido as paciente_apellido,
+                       du.nombre as doctor_nombre, du.apellido as doctor_apellido,
+                       e.nombre as especialidad_nombre,
+                       s.nombre_sede
+                FROM citas c
+                LEFT JOIN pacientes p ON c.paciente_id = p.id
+                LEFT JOIN usuarios pu ON p.usuario_id = pu.id
+                LEFT JOIN doctores d ON c.doctor_id = d.id
+                LEFT JOIN usuarios du ON d.usuario_id = du.id
+                LEFT JOIN especialidades e ON d.especialidad_id = e.id
+                LEFT JOIN sedes s ON c.sede_id = s.id
+                WHERE c.doctor_id = ? AND c.fecha = ?
+                ORDER BY c.hora_inicio ASC";
+        
+        $appointments = $db->fetchAll($sql, [$doctorId, $date]);
         
         // Convertir a formato plano para la vista
         return array_map(function($appointment) {

@@ -161,9 +161,10 @@ class PaymentController
             return $response->redirect('/pagos')->with('error', 'Faltan datos requeridos');
         }
         
-        $appointment = new Appointment();
-        $cita = $appointment->find($citaId);
-        if (!$cita || $cita['estado'] !== 'atendido') {
+        // Obtener cita usando Eloquent y normalizar a array para compatibilidad
+        $citaModel = Appointment::find($citaId);
+        $cita = (is_object($citaModel) && method_exists($citaModel, 'toArray')) ? $citaModel->toArray() : $citaModel;
+        if (!$cita || ($cita['estado'] ?? null) !== 'atendido') {
             return $response->redirect('/pagos')->with('error', 'Cita no válida para pago');
         }
         

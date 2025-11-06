@@ -87,34 +87,14 @@
           <td>
             <div class="actions" role="group" aria-label="Appointment actions">
               <?php if ($role === 'doctor' && $a['estado']==='confirmado'): ?>
-                <a class="btn small primary" href="/citas/<?= (int)$a['id'] ?>/attend" title="Atender">Atender</a>
+                <a class="btn small primary" href="/consultas/<?= (int)$a['id'] ?>/attend" title="Atender">Atender</a>
                 <form method="POST" action="/citas/<?= (int)$a['id'] ?>/ausente" class="ausente-form">
                   <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
                   <button class="btn small danger" type="submit" title="Ausente">Ausente</button>
                 </form>
               <?php elseif ($role === 'doctor' && $a['estado']==='atendido'): ?>
                 <!-- Allow editing for appointments already attended -->
-                <a class="btn small secondary" href="/citas/<?= (int)$a['id'] ?>/edit" title="Editar">Editar</a>
-              <?php endif; ?>
-
-              <?php if (in_array($role, ['cajero','superadmin'], true)): ?>
-                <form method="POST" action="/citas/<?= (int)$a['id'] ?>/status">
-                  <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
-                  <select name="status" class="input" style="width:auto;display:inline-block">
-                    <option value="pendiente"   <?= $a['estado']==='pendiente'?'selected':'' ?>>Pending</option>
-                    <option value="confirmado" <?= $a['estado']==='confirmado'?'selected':'' ?>>Confirmed</option>
-                    <option value="cancelado" <?= $a['estado']==='cancelado'?'selected':'' ?>>Cancelled</option>
-                    <option value="atendido"  <?= $a['estado']==='atendido'?'selected':'' ?>>Attended</option>
-                  </select>
-                  <button class="btn small" type="submit">Save</button>
-                </form>
-              <?php endif; ?>
-
-              <?php if ($role === 'paciente' && $a['estado']!=='cancelado'): ?>
-                <form method="POST" action="/citas/<?= (int)$a['id'] ?>/cancel" onsubmit="return confirm('Cancel this appointment? (allowed until 24h before)');">
-                  <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
-                  <button class="btn small danger" type="submit">Cancelar</button>
-                </form>
+                <a class="btn small secondary" href="/consultas/<?= (int)$a['id'] ?>/edit" title="Editar">Editar</a>
               <?php endif; ?>
             </div>
           </td>
