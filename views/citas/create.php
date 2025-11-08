@@ -48,7 +48,7 @@
 
   <div class="row">
     <label class="label" for="sede_id">Sede</label>
-    <select class="input" name="sede_id" id="sede_id">
+    <select class="input" name="sede_id" id="sede_id" required>
       <option value="">— Selecciona una sede —</option>
       <?php foreach (($sedes ?? []) as $s): ?>
         <option value="<?= (int)$s['id'] ?>"><?= htmlspecialchars($s['nombre_sede'] ?? '') ?></option>
