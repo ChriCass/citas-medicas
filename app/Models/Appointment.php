@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Capsule\Manager as DB;
 
 class Appointment extends Model
 {
@@ -10,7 +11,7 @@ class Appointment extends Model
     protected $fillable = [
             'paciente_id', 'doctor_id', 'sede_id', 'fecha', 
             'hora_inicio', 'hora_fin', 'razon', 'estado', 'pago',
-            'diagnostico_id', 'observaciones_medicas', 'receta'
+        'diagnostico_id', 'observaciones_medicas', 'receta', 'calendario_id'
         ];
     protected $casts = [
         'fecha' => 'date',
