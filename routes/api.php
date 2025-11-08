@@ -60,28 +60,69 @@ return $res->json(['data'=>$rows]);
 
 // Slots: se requiere date + doctor_id + location_id (id de sede)
 $r->get('/slots', function($req,$res){
-$date = $req->query['date'] ?? null;
-$doctorId = (int)($req->query['doctor_id'] ?? 0);
-$locationId = (int)($req->query['location_id'] ?? 0); // sede_id
+	$date = $req->query['date'] ?? null;
+	$doctorId = (int)($req->query['doctor_id'] ?? 0);
+	$locationId = (int)($req->query['location_id'] ?? 0); // sede_id
 
+	if (!$date || !$doctorId) {
+		return $res->json(['message'=>'Bad Request (date, doctor_id requeridos)'], 400);
+	}
 
-if (!$date || !$doctorId) {
-return $res->json(['message'=>'Bad Request (date, doctor_id requeridos)'], 400);
-}
-// try {
-// // Usar el servicio híbrido para obtener o generar disponibilidad
-// $service = new \App\Services\ScheduleGeneratorService();
-// $availability = $service->getOrGenerateAvailability($doctorId, $date, $locationId ?: null);
+	try {
+		$pdo = \App\Core\Database::pdo();
+		// Primero intentar leer slots ya generados en slots_calendario (calendario existente)
+		$sql = "SELECT sc.hora_inicio, sc.hora_fin, sc.disponible, sc.reservado_por_cita_id, sc.calendario_id
+			FROM slots_calendario sc
+			JOIN calendario c ON sc.calendario_id = c.id
+			LEFT JOIN horarios_medicos hm ON c.horario_id = hm.id
+			WHERE c.doctor_id = :doctor_id AND CONVERT(VARCHAR(10), c.fecha, 23) = :fecha";
+		if ($locationId > 0) {
+			$sql .= " AND hm.sede_id = :location_id";
+		}
+		$sql .= " ORDER BY sc.hora_inicio";
 
-// return $res->json([
-//     'date' => $date,
-//     'calendario_id' => $availability['calendario_id'],
-//     'slot_minutes' => 15,
-//     'slots' => $availability['slots']
-// ]);
-// } catch(\Throwable $e) {
-// return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
-// }
+		$stmt = $pdo->prepare($sql);
+		$params = ['doctor_id' => $doctorId, 'fecha' => $date];
+		if ($locationId > 0) $params['location_id'] = $locationId;
+		$stmt->execute($params);
+		$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+		$slots = [];
+		if ($rows && count($rows) > 0) {
+			foreach ($rows as $r) {
+				$disponible = isset($r['disponible']) ? (bool)$r['disponible'] : true;
+				$reservado = isset($r['reservado_por_cita_id']) && $r['reservado_por_cita_id'];
+				if ($disponible && !$reservado) {
+					$hi = substr($r['hora_inicio'],0,5);
+					$hf = isset($r['hora_fin']) ? substr($r['hora_fin'],0,5) : null;
+					$slots[] = [
+						'calendario_id' => $r['calendario_id'] ?? null,
+						'hora_inicio' => $hi,
+						'hora_fin' => $hf
+					];
+				}
+			}
+
+			return $res->json(['date' => $date, 'slot_minutes' => 15, 'slots' => $slots]);
+		}
+
+		// Si no hay slots en la tabla, generar por horarios activos (fallback)
+		$dt = new DateTimeImmutable($date);
+		$generated = \App\Core\Availability::slotsForDate($dt, $doctorId, $locationId);
+
+		// Adaptar formato para que coincida con lo que consume el frontend
+		$genSlots = array_map(function($s){
+			return [
+				'calendario_id' => null,
+				'hora_inicio' => $s['start'] ?? ($s['hora_inicio'] ?? null),
+				'hora_fin' => $s['end'] ?? ($s['hora_fin'] ?? null)
+			];
+		}, $generated);
+
+		return $res->json(['date' => $date, 'slot_minutes' => 15, 'slots' => $genSlots]);
+	} catch (\Throwable $e) {
+		return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
+	}
 }, ['json']);
 
 // Fechas disponibles en calendario para un doctor (opcionalmente filtradas por sede)

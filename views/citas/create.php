@@ -85,74 +85,92 @@
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 <script>
+// Helper para fetch JSON con manejo de errores
+async function fetchJson(url) {
+  const res = await fetch(url, { credentials: 'same-origin' });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} - ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Carga los slots desde la tabla slots_calendario (endpoint /slots_db)
+ * y rellena el select de horas. Sólo se muestran slots no reservados
+ * (reservado_por_cita_id IS NULL) tal y como realiza el endpoint.
+ */
 async function loadSlots(){
-  const d = document.getElementById('doctor_id').value;
-  const l = document.getElementById('sede_id').value;
+  const doctorId = document.getElementById('doctor_id').value;
+  const locationId = document.getElementById('sede_id').value || 0;
   const date = document.getElementById('date').value;
   const sel = document.getElementById('time');
-  
+
   sel.innerHTML = '<option value="">Cargando...</option>';
-  
-  if (!d || !date) {
+
+  if (!doctorId || !date) {
     sel.innerHTML = '<option value="">Selecciona doctor y fecha</option>';
+    document.getElementById('calendario_id').value = '';
     return;
   }
-  
-  try{
-    const url = `/api/v1/slots?date=${encodeURIComponent(date)}&doctor_id=${encodeURIComponent(d)}&location_id=${encodeURIComponent(l||0)}`;
-    
-    const res = await fetch(url);
-    const data = await res.json();
-    
+
+  try {
+    // Usar el endpoint /slots_db que devuelve únicamente los slots almacenados
+    // en la tabla slots_calendario (y el backend ya filtra reservado_por_cita_id)
+    const url = `/api/v1/slots_db?date=${encodeURIComponent(date)}&doctor_id=${encodeURIComponent(doctorId)}&location_id=${encodeURIComponent(locationId)}`;
+    const data = await fetchJson(url);
+
     sel.innerHTML = '';
-    
-    if (data.slots && data.slots.length > 0) {
-      // Agregar opción por defecto
-      const defaultOption = document.createElement('option');
-      defaultOption.value = '';
-      defaultOption.textContent = '— Selecciona una hora —';
-      sel.appendChild(defaultOption);
-      
-      // Agregar slots disponibles
-      data.slots.forEach(slot => {
-        const o = document.createElement('option'); 
-        // slot: { calendario_id, hora_inicio, hora_fin }
-        // value será solo la hora; calendario_id queda en dataset
-        const calId = slot.calendario_id ?? '';
-        const hi = slot.hora_inicio || '';
-        o.value = hi;
-        o.dataset.calendarioId = calId;
-        o.dataset.horaFin = slot.hora_fin ?? '';
-        o.textContent = hi + ' (15 min)';
-        sel.appendChild(o);
-      });
 
-      // si el valor actual no está en las opciones, seleccionar la primera real
-      const firstReal = sel.querySelector('option[data-calendario-id]');
-      if (firstReal) {
-        if (!sel.value || !sel.querySelector(`option[value="${sel.value}"]`)) {
-          sel.value = firstReal.value;
-        }
-        // actualizar hidden calendario_id desde dataset
-        const hidden = document.getElementById('calendario_id');
-        hidden.value = firstReal.dataset.calendarioId || '';
-      }
+    const slots = data.slots || [];
+    if (slots.length === 0) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = 'Sin horarios disponibles para esta fecha';
+      sel.appendChild(o);
+      document.getElementById('calendario_id').value = '';
+      return;
+    }
 
+    // Opción por defecto
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = '— Selecciona una hora —';
+    sel.appendChild(defaultOption);
 
-    } else {
-      const o = document.createElement('option'); 
-      o.value = ''; 
-      o.textContent = 'Sin horarios disponibles para esta fecha'; 
+    for (const slot of slots) {
+      const o = document.createElement('option');
+      const calId = slot.calendario_id ?? '';
+      const hi = slot.hora_inicio || slot.start || '';
+      const hf = slot.hora_fin || slot.end || '';
+      o.value = hi;
+      if (calId !== '') o.dataset.calendarioId = calId;
+      if (hf !== '') o.dataset.horaFin = hf;
+      o.textContent = (hi ? hi : '—') + (hf ? ` — ${hf}` : '') + ' (15 min)';
       sel.appendChild(o);
     }
-  } catch(e) {
-    console.error('Error cargando slots:', e);
+
+    // Seleccionar la primera opción real y sincronizar hidden calendario_id
+    const firstReal = sel.querySelector('option[data-calendario-id]');
+    if (firstReal) {
+      if (!sel.value || !sel.querySelector(`option[value="${sel.value}"]`)) {
+        sel.value = firstReal.value;
+      }
+      document.getElementById('calendario_id').value = firstReal.dataset.calendarioId || '';
+    } else {
+      // Si no hay calendario_id (fallback), limpiar hidden
+      document.getElementById('calendario_id').value = '';
+    }
+
+  } catch (err) {
+    console.error('Error cargando slots:', err);
     sel.innerHTML = '<option value="">Error al cargar horarios</option>';
+    document.getElementById('calendario_id').value = '';
   }
 }
 
-['doctor_id','sede_id','date'].forEach(id => document.getElementById(id).addEventListener('change', loadSlots));
-window.addEventListener('DOMContentLoaded', loadSlots);
+// Note: listeners for doctor/sede/date are wired more explicitly below to ensure
+// sedes and fechas se carguen primero (avoid race conditions).
 
 // Funcionalidad de búsqueda de pacientes
 async function searchPacientes() {
@@ -272,7 +290,13 @@ async function loadDates(){
   dateInput.disabled = true;
 
   if (!d) {
-    sel.innerHTML = '<option value="">Selecciona doctor y sede</option>';
+    // No hay doctor seleccionado -> deshabilitar input de fecha
+    dateInput.value = '';
+    dateInput.disabled = true;
+    dateInput.setCustomValidity('Selecciona un doctor');
+    dateHint.textContent = 'Selecciona un doctor para ver fechas disponibles';
+    dateHint.style.display = 'block';
+    try { initFlatpickr(); } catch(e) { /* ignore */ }
     return;
   }
 
@@ -400,9 +424,6 @@ document.getElementById('sede_id').addEventListener('change', async function(){
   await loadDates();
   loadSlots();
 });
-
-document.getElementById('date').addEventListener('change', loadSlots);
-
 
 document.getElementById('date').addEventListener('change', loadSlots);
 
