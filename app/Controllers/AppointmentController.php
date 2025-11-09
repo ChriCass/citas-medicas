@@ -287,7 +287,7 @@ class AppointmentController
         $sedes = Sede::getAll();
         $especialidades = Especialidad::getAll();
         
-    return $res->view('consultas/edit', [
+    return $res->view('citas/edit', [
             'title' => 'Modificar Cita',
             'cita' => $cita,
             'doctores' => $doctores,
