@@ -37,11 +37,18 @@
   </div>
 
   <div class="row">
+    <label class="label" for="especialidad_id">Especialidad</label>
+    <select class="input" name="especialidad_id" id="especialidad_id" required>
+      <option value="">— Selecciona una especialidad —</option>
+    </select>
+  </div>
+
+  <div class="row">
     <label class="label" for="doctor_id">Doctor</label>
     <select class="input" name="doctor_id" id="doctor_id" required>
       <option value="">— Selecciona un doctor —</option>
       <?php foreach (($doctores ?? []) as $d): ?>
-        <option value="<?= (int)$d['id'] ?>"><?= htmlspecialchars(($d['user_nombre'] ?? '').' '.($d['user_apellido'] ?? '')) ?> — <?= htmlspecialchars($d['especialidad_nombre'] ?? '') ?></option>
+        <option value="<?= (int)$d['id'] ?>" data-especialidad-id="<?= (int)($d['especialidad_id'] ?? 0) ?>"><?= htmlspecialchars(($d['user_nombre'] ?? '').' '.($d['user_apellido'] ?? '')) ?> — <?= htmlspecialchars($d['especialidad_nombre'] ?? '') ?></option>
       <?php endforeach; ?>
     </select>
   </div>
@@ -239,6 +246,81 @@ function clearSearch() {
   document.getElementById('search_results').style.display = 'none';
 }
 
+async function loadEspecialidades() {
+  const sel = document.getElementById('especialidad_id');
+  sel.innerHTML = '<option value="">Cargando...</option>';
+
+  try {
+    const res = await fetch('/api/v1/especialidades');
+    const data = await res.json();
+
+    sel.innerHTML = '';
+
+    if (data.data && data.data.length > 0) {
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = '— Selecciona una especialidad —';
+      sel.appendChild(defaultOption);
+
+      data.data.forEach(e => {
+        const o = document.createElement('option');
+        o.value = e.id;
+        o.textContent = e.nombre ?? e.nombre_especialidad ?? '';
+        sel.appendChild(o);
+      });
+    } else {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = 'Sin especialidades disponibles';
+      sel.appendChild(o);
+    }
+  } catch(e) {
+    console.error('Error cargando especialidades:', e);
+    sel.innerHTML = '<option value="">Error al cargar especialidades</option>';
+  }
+}
+
+function filterDoctoresByEspecialidad() {
+  const especialidadId = document.getElementById('especialidad_id').value;
+  const doctorSel = document.getElementById('doctor_id');
+  const allOptions = doctorSel.querySelectorAll('option');
+
+  if (!especialidadId) {
+    // Mostrar todos los doctores
+    allOptions.forEach(opt => {
+      if (opt.value) opt.style.display = '';
+    });
+    return;
+  }
+
+  // Filtrar doctores por especialidad
+  allOptions.forEach(opt => {
+    if (!opt.value) {
+      opt.style.display = '';
+      return;
+    }
+    
+    const optEspecialidadId = opt.getAttribute('data-especialidad-id');
+    if (optEspecialidadId == especialidadId) {
+      opt.style.display = '';
+    } else {
+      opt.style.display = 'none';
+    }
+  });
+
+  // Resetear selección de doctor si no coincide con la especialidad
+  const selectedOption = doctorSel.selectedOptions[0];
+  if (selectedOption && selectedOption.value) {
+    const selectedEspecialidadId = selectedOption.getAttribute('data-especialidad-id');
+    if (selectedEspecialidadId != especialidadId) {
+      doctorSel.value = '';
+      // Limpiar campos dependientes
+      document.getElementById('sede_id').innerHTML = '<option value="">— Selecciona una sede —</option>';
+      document.getElementById('time').innerHTML = '<option value="">— Selecciona una hora —</option>';
+    }
+  }
+}
+
 async function loadSedes(){
   const d = document.getElementById('doctor_id').value;
   const sel = document.getElementById('sede_id');
@@ -414,6 +496,10 @@ document.getElementById('time').addEventListener('change', function(e){
 });
 
 // Listeners: cuando cambia el doctor, cargamos sedes y luego slots; sede/date solo recargan slots
+document.getElementById('especialidad_id').addEventListener('change', function(){
+  filterDoctoresByEspecialidad();
+});
+
 document.getElementById('doctor_id').addEventListener('change', async function(){
   await loadSedes();
   await loadDates();
@@ -443,6 +529,7 @@ document.getElementById('paciente_search').addEventListener('input', (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', async function(){
+  await loadEspecialidades();
   await loadSedes();
   await loadDates();
   loadSlots();

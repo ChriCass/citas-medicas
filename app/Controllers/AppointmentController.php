@@ -150,9 +150,9 @@ class AppointmentController
         }
 
         // Verificar solapamiento
-        if (Appointment::overlapsWindow($date, $horaInicio, $horaFin, $doctorId, $sedeId)) {
-            return $res->view('citas/create', ['error'=>'El horario ya no está disponible'] + self::bags());
-        }
+        // if (Appointment::overlapsWindow($date, $horaInicio, $horaFin, $doctorId, $sedeId)) {
+        //     return $res->view('citas/create', ['error'=>'El horario ya no está disponible'] + self::bags());
+        // }
 
         // $citaId = Appointment::createAppointment($pacienteId, $doctorId, $sedeId > 0 ? $sedeId : null, $date, $horaInicio, $horaFin, $notes);
         // return $res->redirect('/citas?success=1');

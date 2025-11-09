@@ -54,8 +54,21 @@ class Appointment extends Model
             return false;
         }
 
+        $oldStatus = $appointment->estado;
         $appointment->estado = $status;
-        return $appointment->save();
+        $result = $appointment->save();
+
+        // Si se cancela la cita, liberar el slot en slots_calendario
+        if ($result && $status === 'cancelado' && $oldStatus !== 'cancelado') {
+            DB::table('slots_calendario')
+                ->where('reservado_por_cita_id', $id)
+                ->update([
+                    'reservado_por_cita_id' => null,
+                    'disponible' => 1
+                ]);
+        }
+
+        return $result;
     }
     
     public static function updatePayment($id, $paymentStatus)
@@ -358,7 +371,19 @@ class Appointment extends Model
             return false; // No se puede cancelar
         }
         
-        return $cita->update(['estado' => 'cancelado']);
+        $result = $cita->update(['estado' => 'cancelado']);
+
+        // Si se canceló exitosamente, liberar el slot en slots_calendario
+        if ($result) {
+            DB::table('slots_calendario')
+                ->where('reservado_por_cita_id', $citaId)
+                ->update([
+                    'reservado_por_cita_id' => null,
+                    'disponible' => 1
+                ]);
+        }
+
+        return $result;
     }
     
     public static function canModify($citaId, $userId)
@@ -428,7 +453,10 @@ class Appointment extends Model
                     ->where('calendario_id', $calendarioId)
                     ->where('hora_inicio', 'like', $slotHora . '%')
                     ->whereNull('reservado_por_cita_id')
-                    ->update(['reservado_por_cita_id' => $createdId]);
+                    ->update([
+                        'reservado_por_cita_id' => $createdId,
+                        'disponible' => 0  // Marcar como no disponible
+                    ]);
 
                 if ($affected <= 0) {
                     // No se pudo reservar el slot (otro proceso lo reservó)
