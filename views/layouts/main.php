@@ -481,6 +481,18 @@
       waitForPageLoadError();
     <?php endif; ?>
 
+    <?php if (isset($_GET['error']) && $_GET['error'] == 'not_owner'): ?>
+      // Mostrar modal cuando el usuario no es el propietario de la cita
+      Swal.fire({
+        icon: 'error',
+        title: 'No autorizado',
+        text: 'Solo el paciente propietario de la cita puede cancelarla.',
+        showConfirmButton: true,
+        confirmButtonText: 'Entendido',
+        allowOutsideClick: false
+      });
+    <?php endif; ?>
+
     <?php if (isset($_SESSION['error'])): ?>
       Swal.fire({
         icon: 'error',

@@ -233,9 +233,125 @@ class AppointmentController
         $role = $user['rol'] ?? '';
         $id = (int)($req->params['id'] ?? 0);
 
+        // DEBUG: registrar información para diagnosticar por qué falla la cancelación
+        try {
+            $uid = (int)($user['id'] ?? 0);
+            error_log("[cancel-debug] request id={$id}, userId={$uid}, role={$role}");
+
+            $cita = Appointment::find($id);
+            if ($cita) {
+                // Normalizar fecha y hora independientemente de si Eloquent las devuelve como objetos o strings
+                // Fecha (YYYY-MM-DD)
+                try {
+                    if (is_object($cita->fecha) && method_exists($cita->fecha, 'format')) {
+                        $fechaPart = $cita->fecha->format('Y-m-d');
+                    } else {
+                        $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+                    }
+                } catch (\Throwable $e) {
+                    $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+                }
+
+                // Hora (HH:MM:SS)
+                try {
+                    if (is_object($cita->hora_inicio) && method_exists($cita->hora_inicio, 'format')) {
+                        $horaPart = $cita->hora_inicio->format('H:i:s');
+                    } else {
+                        $horaStr = (string)$cita->hora_inicio;
+                        $t = strtotime($horaStr);
+                        if ($t !== false) {
+                            $horaPart = date('H:i:s', $t);
+                        } else {
+                            // Si viene solo como 'HH:MM' u otro formato, intentar extraer con regex
+                            if (preg_match('/(\d{1,2}:\d{2}(?::\d{2})?)/', $horaStr, $m)) {
+                                $horaPart = strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
+                            } else {
+                                $horaPart = '00:00:00';
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $horaPart = date('H:i:s', strtotime((string)$cita->hora_inicio));
+                }
+
+                $fechaCita = trim($fechaPart . ' ' . $horaPart);
+                error_log("[cancel-debug] cita found id={$id} fechaPart='{$fechaPart}' horaPart='{$horaPart}' constructed='{$fechaCita}' estado='{$cita->estado}' paciente_id='{$cita->paciente_id}'");
+                $now = date('Y-m-d H:i:s');
+                error_log("[cancel-debug] now={$now}");
+            } else {
+                error_log("[cancel-debug] cita NOT found id={$id}");
+            }
+        } catch (\Throwable $e) {
+            error_log("[cancel-debug] error while logging: " . $e->getMessage());
+        }
+
         if ($role === 'paciente') {
-            if (!Appointment::cancelByPatient($id, (int)$user['id'])) {
+            // Comprobación explícita para dar retroalimentación clara:
+            $userId = (int)($user['id'] ?? 0);
+            $cita = Appointment::with('paciente.usuario')
+                        ->where('id', $id)
+                        ->whereHas('paciente.usuario', function($q) use ($userId) {
+                            $q->where('id', $userId);
+                        })->first();
+
+            if (!$cita) {
+                error_log("[cancel-debug] patient not owner or cita not found for id={$id} user={$userId}");
+                return $res->redirect('/citas?error=not_owner');
+            }
+
+            // Verificar ventana de 24 horas - normalizar fecha y hora
+            try {
+                if (is_object($cita->fecha) && method_exists($cita->fecha, 'format')) {
+                    $fechaPart = $cita->fecha->format('Y-m-d');
+                } else {
+                    $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+                }
+            } catch (\Throwable $e) {
+                $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+            }
+
+            try {
+                if (is_object($cita->hora_inicio) && method_exists($cita->hora_inicio, 'format')) {
+                    $horaPart = $cita->hora_inicio->format('H:i:s');
+                } else {
+                    $horaStr = (string)$cita->hora_inicio;
+                    $t = strtotime($horaStr);
+                    if ($t !== false) {
+                        $horaPart = date('H:i:s', $t);
+                    } else {
+                        if (preg_match('/(\d{1,2}:\d{2}(?::\d{2})?)/', $horaStr, $m)) {
+                            $horaPart = strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
+                        } else {
+                            $horaPart = '00:00:00';
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                $horaPart = date('H:i:s', strtotime((string)$cita->hora_inicio));
+            }
+
+            $fechaCita = trim($fechaPart . ' ' . $horaPart);
+            $fechaLimiteTs = strtotime($fechaCita . ' -24 hours');
+            $fechaLimite = date('Y-m-d H:i:s', $fechaLimiteTs);
+            $now = date('Y-m-d H:i:s');
+            
+            error_log("[cancel-debug] check: fechaCita='{$fechaCita}' fechaLimiteTs={$fechaLimiteTs} fechaLimite='{$fechaLimite}' now='{$now}'");
+            
+            if ($now > $fechaLimite) {
+                error_log("[cancel-debug] within 24h: now={$now} limite={$fechaLimite} for cita={$id}");
                 return $res->redirect('/citas?error=cancel_time');
+            }
+
+            // Proceder a cancelar usando la función que maneja liberación de slots
+            $ok = Appointment::updateStatus($id, 'cancelado');
+            error_log('[cancel-debug] updateStatus returned: ' . ($ok ? 'true' : 'false'));
+            if (!$ok) {
+                // Fallback: intentar cancelByPatient por si hay lógica adicional
+                $ok2 = Appointment::cancelByPatient($id, $userId);
+                error_log('[cancel-debug] cancelByPatient fallback returned: ' . ($ok2 ? 'true' : 'false'));
+                if (!$ok2) {
+                    return $res->redirect('/citas?error=cancel_time');
+                }
             }
             return $res->redirect('/citas?canceled=1');
         } else {

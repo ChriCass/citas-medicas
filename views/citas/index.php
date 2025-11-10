@@ -75,8 +75,19 @@
 <script>
 // Función para confirmar cancelación de cita con SweetAlert2
 function confirmCancelAppointment(event, form) {
+  // Evitar envío automático
   event.preventDefault();
-  
+
+  // Si SweetAlert2 no está disponible, usar confirm() como respaldo
+  if (typeof Swal === 'undefined' || typeof Swal.fire !== 'function') {
+    if (window.confirm('¿Cancelar cita?\n\n¿Estás seguro de que deseas cancelar esta cita? Solo puedes cancelar hasta 24 horas antes.')) {
+      // quitar el handler onsubmit antes de enviar para evitar recursión
+      form.removeAttribute('onsubmit');
+      form.submit();
+    }
+    return false;
+  }
+
   Swal.fire({
     title: '¿Cancelar cita?',
     text: '¿Estás seguro de que deseas cancelar esta cita? Solo puedes cancelar hasta 24 horas antes.',
@@ -88,10 +99,13 @@ function confirmCancelAppointment(event, form) {
     cancelButtonText: 'No, mantener'
   }).then((result) => {
     if (result.isConfirmed) {
-      form.submit();
+      // Quitar el handler onsubmit para evitar que se vuelva a ejecutar
+      try { form.removeAttribute('onsubmit'); } catch(e) {}
+      // Enviar el formulario (se hace en el siguiente tick para mayor compatibilidad)
+      setTimeout(() => form.submit(), 0);
     }
   });
-  
+
   return false;
 }
 </script>

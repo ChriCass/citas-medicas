@@ -364,9 +364,43 @@ class Appointment extends Model
         }
         
         // Verificar si se puede cancelar (24 horas antes)
-        $fechaCita = $cita->fecha . ' ' . $cita->hora_inicio;
+        // Normalizar fecha y hora por separado (puede venir como DateTime/Carbon u otros formatos)
+        try {
+            // Fecha (YYYY-MM-DD)
+            if (is_object($cita->fecha) && method_exists($cita->fecha, 'format')) {
+                $fechaPart = $cita->fecha->format('Y-m-d');
+            } else {
+                $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+            }
+        } catch (\Throwable $e) {
+            $fechaPart = date('Y-m-d', strtotime((string)$cita->fecha));
+        }
+
+        // Hora (HH:MM:SS)
+        try {
+            if (is_object($cita->hora_inicio) && method_exists($cita->hora_inicio, 'format')) {
+                $horaPart = $cita->hora_inicio->format('H:i:s');
+            } else {
+                $horaStr = (string)$cita->hora_inicio;
+                $t = strtotime($horaStr);
+                if ($t !== false) {
+                    // Si trae fecha+hora, obtenemos solo la hora
+                    $horaPart = date('H:i:s', $t);
+                } else {
+                    if (preg_match('/(\d{1,2}:\d{2}(?::\d{2})?)/', $horaStr, $m)) {
+                        $horaPart = strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
+                    } else {
+                        $horaPart = '00:00:00';
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $horaPart = date('H:i:s', strtotime((string)$cita->hora_inicio));
+        }
+
+        $fechaCita = trim($fechaPart . ' ' . $horaPart);
         $fechaLimite = date('Y-m-d H:i:s', strtotime($fechaCita . ' -24 hours'));
-        
+
         if (date('Y-m-d H:i:s') > $fechaLimite) {
             return false; // No se puede cancelar
         }
