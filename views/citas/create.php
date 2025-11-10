@@ -12,19 +12,6 @@
   <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
 
   <div class="row">
-    <label class="label" for="paciente_search">Buscar Paciente</label>
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <input type="text" 
-             id="paciente_search" 
-             placeholder="Buscar por nombre, DNI o usuario_id..."
-             style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-      <button type="button" id="search_paciente" class="btn secondary">Buscar</button>
-      <button type="button" id="clear_search" class="btn secondary">Limpiar</button>
-    </div>
-    <div id="search_results" style="margin-top: 10px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; display: none;"></div>
-  </div>
-
-  <div class="row">
     <label class="label" for="paciente_id">Paciente Seleccionado</label>
     <select class="input" name="paciente_id" id="paciente_id" required>
       <option value="">— Selecciona un paciente —</option>
@@ -179,50 +166,6 @@ async function loadSlots(){
 // Note: listeners for doctor/sede/date are wired more explicitly below to ensure
 // sedes and fechas se carguen primero (avoid race conditions).
 
-// Funcionalidad de búsqueda de pacientes
-async function searchPacientes() {
-  const query = document.getElementById('paciente_search').value.trim();
-  const resultsDiv = document.getElementById('search_results');
-  
-  if (!query) {
-    resultsDiv.style.display = 'none';
-    return;
-  }
-  
-  try {
-    const response = await fetch(`/api/v1/pacientes/search?q=${encodeURIComponent(query)}`);
-    const data = await response.json();
-    
-    if (data.pacientes && data.pacientes.length > 0) {
-      resultsDiv.innerHTML = '';
-      data.pacientes.forEach(paciente => {
-        const div = document.createElement('div');
-        div.style.padding = '10px';
-        div.style.borderBottom = '1px solid #eee';
-        div.style.cursor = 'pointer';
-        div.style.backgroundColor = '#f9f9f9';
-        div.innerHTML = `
-          <strong>${paciente.nombre} ${paciente.apellido}</strong><br>
-          <small>DNI: ${paciente.dni} | ID: ${paciente.usuario_id} | Email: ${paciente.email}</small>
-        `;
-        
-        div.addEventListener('click', () => {
-          selectPaciente(paciente);
-        });
-        
-        resultsDiv.appendChild(div);
-      });
-      resultsDiv.style.display = 'block';
-    } else {
-      resultsDiv.innerHTML = '<div style="padding: 10px; color: #666;">No se encontraron pacientes</div>';
-      resultsDiv.style.display = 'block';
-    }
-  } catch (error) {
-    console.error('Error buscando pacientes:', error);
-    resultsDiv.innerHTML = '<div style="padding: 10px; color: #d32f2f;">Error al buscar pacientes</div>';
-    resultsDiv.style.display = 'block';
-  }
-}
 
 function selectPaciente(paciente) {
   const select = document.getElementById('paciente_id');
