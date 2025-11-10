@@ -196,16 +196,20 @@ async function loadEspecialidades() {
   try {
     const res = await fetch('/api/v1/especialidades');
     const data = await res.json();
+    // Aceptar dos formatos: { data: [...] } o directamente [...]
+    const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
 
     sel.innerHTML = '';
 
-    if (data.data && data.data.length > 0) {
+    if (list.length > 0) {
       const defaultOption = document.createElement('option');
       defaultOption.value = '';
       defaultOption.textContent = '— Selecciona una especialidad —';
+      // dejar el placeholder seleccionado por defecto
+      defaultOption.selected = true;
       sel.appendChild(defaultOption);
 
-      data.data.forEach(e => {
+      list.forEach(e => {
         const o = document.createElement('option');
         o.value = e.id;
         o.textContent = e.nombre ?? e.nombre_especialidad ?? '';
@@ -262,6 +266,95 @@ function filterDoctoresByEspecialidad() {
       document.getElementById('time').innerHTML = '<option value="">— Selecciona una hora —</option>';
     }
   }
+}
+
+/**
+ * Intentar cargar doctores desde el API por especialidad. Si falla, usar el
+ * filtrado de opciones existente (filterDoctoresByEspecialidad) como fallback.
+ */
+async function loadDoctores(especialidadId) {
+  const doctorSel = document.getElementById('doctor_id');
+
+  // Si no se indicó especialidad, mostrar todos los doctores (reset)
+  if (!especialidadId) {
+    // si el servidor ya renderizó doctores, simplemente mostrar todos
+    const allOptions = doctorSel.querySelectorAll('option');
+    allOptions.forEach(opt => opt.style.display = '');
+    doctorSel.value = '';
+    return;
+  }
+
+  // Intentar obtener vía API
+  try {
+    // Preferir endpoint nuevo en inglés que acepta el id en la ruta; mantener compatibilidad
+    // con el endpoint en español si existiera.
+    let res = await fetch(`/api/v1/doctors/${encodeURIComponent(especialidadId)}`);
+    if (res.status === 404) {
+      // intentar endpoint en español con query param por compatibilidad con versiones antiguas
+      res = await fetch(`/api/v1/doctores?especialidad_id=${encodeURIComponent(especialidadId)}`);
+    }
+    // Si la ruta no existe (404) o el endpoint no está implementado, usar fallback silencioso
+    if (res.status === 404) {
+      console.info('API /api/v1/doctores no encontrada (404), usando fallback local');
+      filterDoctoresByEspecialidad();
+      return;
+    }
+    if (!res.ok) {
+      // Otros errores HTTP: usar fallback pero loguear a nivel debug
+      console.info('API doctores respondió con estado', res.status, ', usando fallback local');
+      filterDoctoresByEspecialidad();
+      return;
+    }
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      console.warn('Respuesta de API doctores no es JSON válido, usando fallback', parseErr);
+      filterDoctoresByEspecialidad();
+      return;
+    }
+
+    if (data && Array.isArray(data.data) && data.data.length > 0) {
+      // Vaciar y rellenar opciones
+      doctorSel.innerHTML = '';
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = '— Selecciona un doctor —';
+  // Asegurar que el placeholder quede seleccionado inicialmente
+  defaultOption.selected = true;
+  doctorSel.appendChild(defaultOption);
+
+      data.data.forEach(d => {
+        const o = document.createElement('option');
+        o.value = d.id;
+        // mantener atributo para compatibilidad con filterDoctoresByEspecialidad
+        if (d.especialidad_id) o.setAttribute('data-especialidad-id', d.especialidad_id);
+        // soportar distintas formas de respuesta: user_nombre/user_apellido o nombre/apellido
+        const nombre = d.user_nombre ?? d.nombre ?? '';
+        const apellido = d.user_apellido ?? d.apellido ?? '';
+        const esp = d.especialidad_nombre ?? d.nombre_especialidad ?? '';
+        o.textContent = (nombre + ' ' + apellido).trim() + (esp ? (' — ' + esp) : '');
+        doctorSel.appendChild(o);
+      });
+
+      // disparar carga dependiente
+      doctorSel.dispatchEvent(new Event('change'));
+      return;
+    }
+  } catch (e) {
+    // fallback: si la request falla (network error), usamos el filtrado en-memory
+    console.info('Error al llamar API doctores, usando fallback local:', e && e.message ? e.message : e);
+    filterDoctoresByEspecialidad();
+    return;
+  }
+
+  // Si la respuesta no contenía doctores, vaciar select
+  doctorSel.innerHTML = '';
+  const o = document.createElement('option');
+  o.value = '';
+  o.textContent = 'Sin doctores disponibles para esta especialidad';
+  doctorSel.appendChild(o);
 }
 
 async function loadSedes(){
@@ -403,15 +496,22 @@ function initFlatpickr(){
 
 
 
-// Event listeners
-document.getElementById('search_paciente').addEventListener('click', searchPacientes);
-document.getElementById('clear_search').addEventListener('click', clearSearch);
-document.getElementById('paciente_search').addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    searchPacientes();
-  }
-});
+// Event listeners (attach only if elements exist to avoid null errors)
+const searchPacienteBtn = document.getElementById('search_paciente');
+if (searchPacienteBtn) searchPacienteBtn.addEventListener('click', searchPacientes);
+
+const clearSearchBtn = document.getElementById('clear_search');
+if (clearSearchBtn) clearSearchBtn.addEventListener('click', clearSearch);
+
+const pacienteSearchInput = document.getElementById('paciente_search');
+if (pacienteSearchInput) {
+  pacienteSearchInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchPacientes();
+    }
+  });
+}
 // validar selección del date input
 document.getElementById('date').addEventListener('change', function(e){
   const v = e.target.value;
@@ -439,8 +539,9 @@ document.getElementById('time').addEventListener('change', function(e){
 });
 
 // Listeners: cuando cambia el doctor, cargamos sedes y luego slots; sede/date solo recargan slots
-document.getElementById('especialidad_id').addEventListener('change', function(){
-  filterDoctoresByEspecialidad();
+document.getElementById('especialidad_id').addEventListener('change', async function(){
+  // Intentar cargar doctores por API para la especialidad seleccionada.
+  await loadDoctores(this.value);
 });
 
 document.getElementById('doctor_id').addEventListener('change', async function(){
@@ -460,16 +561,19 @@ document.getElementById('date').addEventListener('change', loadSlots);
 
 // Búsqueda en tiempo real (opcional)
 let searchTimeout;
-document.getElementById('paciente_search').addEventListener('input', (e) => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    if (e.target.value.length >= 2) {
-      searchPacientes();
-    } else {
-      document.getElementById('search_results').style.display = 'none';
-    }
-  }, 300);
-});
+if (pacienteSearchInput) {
+  pacienteSearchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      if (e.target.value.length >= 2) {
+        searchPacientes();
+      } else {
+        const sr = document.getElementById('search_results');
+        if (sr) sr.style.display = 'none';
+      }
+    }, 300);
+  });
+}
 
 window.addEventListener('DOMContentLoaded', async function(){
   await loadEspecialidades();

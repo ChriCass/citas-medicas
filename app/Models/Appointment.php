@@ -403,19 +403,134 @@ class Appointment extends Model
         return in_array($cita->estado, ['pendiente', 'confirmado']);
     }
     
-    public static function modifyAppointment($citaId, $pacienteId, $doctorId, $sedeId, $fecha, $horaInicio, $horaFin, $razon)
+    /**
+     * Modifica una cita y maneja la reserva de slots en slots_calendario.
+     * - Libera el slot anterior (si estaba reservado por esta cita)
+     * - Reserva el nuevo slot indicado por $calendarioId (si se proporciona)
+     * Todo dentro de una transacción para mantener consistencia.
+     *
+     * @param int $citaId
+     * @param int $pacienteId
+     * @param int|null $doctorId
+     * @param int|null $sedeId
+     * @param string|null $fecha
+     * @param string|null $horaInicio
+     * @param string|null $horaFin
+     * @param string|null $razon
+     * @param int|null $calendarioId
+     * @return bool
+     */
+    public static function modifyAppointment($citaId, $doctorId, $sedeId, $fecha, $horaInicio, $horaFin, $razon, $calendarioId = null, $slotId = null)
     {
-        $horaFinCalculada = date('H:i:s', strtotime($horaInicio . ' +15 minutes'));
-        
-        return static::where('id', $citaId)->update([
-            'paciente_id' => $pacienteId,
-            'doctor_id' => $doctorId,
-            'sede_id' => $sedeId,
-            'fecha' => $fecha,
-            'hora_inicio' => $horaInicio,
-            'hora_fin' => $horaFinCalculada,
-            'razon' => $razon
-        ]);
+        // Calcular hora_fin si no viene explícita
+        $horaFinCalculada = $horaFin ?: date('H:i:s', strtotime(($horaInicio ?? '00:00:00') . ' +15 minutes'));
+
+        // Buscar la cita
+        $appointment = static::find($citaId);
+        if (!$appointment) return false;
+
+        DB::beginTransaction();
+        try {
+            $oldCalendario = $appointment->calendario_id ?? null;
+
+            // Obtener slot anterior (si existe) reservado por esta cita
+            $oldSlot = DB::table('slots_calendario')
+                ->where('reservado_por_cita_id', $citaId)
+                ->first();
+            $oldSlotId = $oldSlot->id ?? null;
+
+            error_log("modifyAppointment: citaId=$citaId, oldCalendario=$oldCalendario, oldSlotId=$oldSlotId, newCalendario=$calendarioId, newSlotId=$slotId");
+
+            // Si se proporcionó slotId, intentamos reservar el slot por id
+            if ($slotId) {
+                // Reservar el nuevo slot si está libre o ya reservado por esta cita
+                $affected = DB::table('slots_calendario')
+                    ->where('id', $slotId)
+                    ->where(function($q) use ($citaId) {
+                        $q->whereNull('reservado_por_cita_id')
+                          ->orWhere('reservado_por_cita_id', $citaId);
+                    })
+                    ->update([
+                        'reservado_por_cita_id' => $citaId,
+                        'disponible' => 0
+                    ]);
+
+                error_log("Reserved by slotId: $affected rows for slotId=$slotId");
+
+                if ($affected <= 0) {
+                    DB::rollBack();
+                    return false;
+                }
+
+                // Si el slot reservado tiene un calendario_id asociado, actualizar la cita con ese calendario_id
+                $slotRow = DB::table('slots_calendario')->where('id', $slotId)->first();
+                if ($slotRow && isset($slotRow->calendario_id)) {
+                    $appointment->calendario_id = $slotRow->calendario_id;
+                }
+
+                // Liberar slot anterior si era distinto
+                if ($oldSlotId && $oldSlotId != $slotId) {
+                    DB::table('slots_calendario')
+                        ->where('id', $oldSlotId)
+                        ->where('reservado_por_cita_id', $citaId)
+                        ->update([
+                            'reservado_por_cita_id' => null,
+                            'disponible' => 1
+                        ]);
+                }
+            } else {
+                // No se proporcionó slotId -> caer en comportamiento por calendario_id
+                if ($calendarioId && $calendarioId != $oldCalendario) {
+                    // Reservar calendario_id como antes
+                    $affected = DB::table('slots_calendario')
+                        ->where('calendario_id', $calendarioId)
+                        ->where(function($q) use ($citaId) {
+                            $q->whereNull('reservado_por_cita_id')
+                              ->orWhere('reservado_por_cita_id', $citaId);
+                        })
+                        ->update([
+                            'reservado_por_cita_id' => $citaId,
+                            'disponible' => 0
+                        ]);
+
+                    if ($affected <= 0) {
+                        DB::rollBack();
+                        return false;
+                    }
+
+                    // liberar antiguo calendario si existía
+                    if ($oldCalendario && $oldCalendario != $calendarioId) {
+                        DB::table('slots_calendario')
+                            ->where('calendario_id', $oldCalendario)
+                            ->where('reservado_por_cita_id', $citaId)
+                            ->update([
+                                'reservado_por_cita_id' => null,
+                                'disponible' => 1
+                            ]);
+                    }
+                }
+            }
+
+            // PASO 3: Actualizar la cita (no se modifica el paciente)
+            $appointment->doctor_id = $doctorId;
+            $appointment->sede_id = $sedeId;
+            $appointment->fecha = $fecha;
+            $appointment->hora_inicio = $horaInicio;
+            $appointment->hora_fin = $horaFinCalculada;
+            $appointment->razon = $razon;
+            // Actualizar el calendario_id (puede ser null si no hay nuevo calendario)
+            $appointment->calendario_id = $calendarioId ?? $oldCalendario;
+
+            $saved = $appointment->save();
+            error_log("Appointment updated: " . ($saved ? "YES" : "NO") . ", new calendario_id=" . ($appointment->calendario_id ?? "null"));
+
+            DB::commit();
+            return (bool)$saved;
+        } catch (\Throwable $e) {
+            error_log("Exception in modifyAppointment: " . $e->getMessage() . " | " . $e->getTraceAsString());
+            DB::rollBack();
+            return false;
+        }
     }
 
     public static function create(

@@ -335,15 +335,20 @@ class AppointmentController
         }
         
         // Intentar modificar la cita
+        $calendarioId = !empty($req->body['calendario_id']) ? (int)$req->body['calendario_id'] : null;
+        $slotId = !empty($req->body['slot_id']) ? (int)$req->body['slot_id'] : null;
+
+        // Nota: no modificamos el paciente al actualizar la cita
         $success = Appointment::modifyAppointment(
             $id,
-            (int)$user['id'],
             $doctorId,
             $sedeId,
             $fecha,
             $horaInicio,
             $horaFin,
-            $razon
+            $razon,
+            $calendarioId,
+            $slotId
         );
         
         if ($success) {

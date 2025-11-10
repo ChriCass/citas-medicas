@@ -28,17 +28,12 @@ foreach (($doctores ?? []) as $dd) {
 
   
 
-  <div class="row">
-    <label class="label" for="paciente_id">Paciente Seleccionado</label>
-    <select class="input" name="paciente_id" id="paciente_id" required>
-      <option value="">— Selecciona un paciente —</option>
-      <?php foreach (($pacientes ?? []) as $p): ?>
-        <option value="<?= (int)$p['id'] ?>" data-dni="<?= htmlspecialchars($p['dni'] ?? '') ?>" data-user-id="<?= (int)$p['usuario_id'] ?>" <?= (isset($cita['paciente_id']) && (int)$cita['paciente_id'] === (int)$p['id']) ? 'selected' : '' ?>>
-          <?= htmlspecialchars(($p['nombre'] ?? '').' '.($p['apellido'] ?? '')) ?> — DNI: <?= htmlspecialchars($p['dni'] ?? '') ?> — ID: <?= (int)$p['usuario_id'] ?>
-        </option>
-      <?php endforeach; ?>
-    </select>
-  </div>
+  <?php
+  // El campo paciente no debe ser editable en la vista de edición; lo mantenemos
+  // como hidden para enviar el paciente original al servidor.
+  ?>
+  <input type="hidden" id="paciente_id" name="paciente_id" value="<?= (int)($cita['paciente_id'] ?? 0) ?>">
+  <input type="hidden" id="paciente_label" value="<?= htmlspecialchars(($cita['paciente_nombre'] ?? '') . ' ' . ($cita['paciente_apellido'] ?? '')) ?>">
 
   <div class="row">
     <label class="label" for="especialidad_id">Especialidad</label>
@@ -86,6 +81,7 @@ foreach (($doctores ?? []) as $dd) {
     <input type="hidden" name="hora_inicio" id="hora_inicio" value="<?= htmlspecialchars(isset($cita['hora_inicio']) ? substr($cita['hora_inicio'],0,5) : '') ?>">
     <input type="hidden" name="hora_fin" id="hora_fin" value="<?= htmlspecialchars(isset($cita['hora_fin']) ? substr($cita['hora_fin'],0,5) : '') ?>">
     <input type="hidden" name="calendario_id" id="calendario_id" value="<?= htmlspecialchars($cita['calendario_id'] ?? '') ?>">
+    <input type="hidden" name="slot_id" id="slot_id" value="<?= htmlspecialchars($cita['slot_id'] ?? '') ?>">
   </div>
 
   <div class="row">
@@ -115,6 +111,7 @@ async function fetchJson(url) {
 const initialAppointment = <?= json_encode([
   'time' => isset($cita['hora_inicio']) ? substr($cita['hora_inicio'],0,5) : '',
   'calendario_id' => isset($cita['calendario_id']) ? $cita['calendario_id'] : '',
+  'slot_id' => isset($cita['slot_id']) ? $cita['slot_id'] : '',
   'hora_fin' => isset($cita['hora_fin']) ? substr($cita['hora_fin'],0,5) : '',
   'doctor_id' => isset($cita['doctor_id']) ? (int)$cita['doctor_id'] : 0,
   'sede_id' => isset($cita['sede_id']) ? (int)$cita['sede_id'] : 0,
@@ -167,10 +164,12 @@ async function loadSlots(){
     for (const slot of slots) {
       const o = document.createElement('option');
       const calId = slot.calendario_id ?? '';
+      const slotId = slot.slot_id ?? slot.id ?? '';
       const hi = slot.hora_inicio || slot.start || '';
       const hf = slot.hora_fin || slot.end || '';
       o.value = hi;
       if (calId !== '') o.dataset.calendarioId = calId;
+      if (slotId !== '') o.dataset.slotId = slotId;
       if (hf !== '') o.dataset.horaFin = hf;
       o.textContent = (hi ? hi : '—') + (hf ? ` — ${hf}` : '') + ' (15 min)';
       sel.appendChild(o);
@@ -186,6 +185,7 @@ async function loadSlots(){
         if (found) {
           sel.value = found.value;
           document.getElementById('calendario_id').value = found.dataset.calendarioId || initialAppointment.calendario_id || '';
+          document.getElementById('slot_id').value = found.dataset.slotId || initialAppointment.slot_id || '';
           document.getElementById('hora_inicio').value = found.value || initialAppointment.time || '';
           document.getElementById('hora_fin').value = found.dataset.horaFin || initialAppointment.hora_fin || '';
         } else {
@@ -193,6 +193,7 @@ async function loadSlots(){
           const appOpt = document.createElement('option');
           appOpt.value = initialAppointment.time;
           if (initialAppointment.calendario_id) appOpt.dataset.calendarioId = initialAppointment.calendario_id;
+          if (initialAppointment.slot_id) appOpt.dataset.slotId = initialAppointment.slot_id;
           if (initialAppointment.hora_fin) appOpt.dataset.horaFin = initialAppointment.hora_fin;
           appOpt.textContent = initialAppointment.time + (initialAppointment.hora_fin ? ` — ${initialAppointment.hora_fin}` : '') + ' (actual)';
           // insertar justo después de la opción por defecto
@@ -200,6 +201,7 @@ async function loadSlots(){
           if (first) sel.insertBefore(appOpt, first.nextSibling);
           sel.value = appOpt.value;
           document.getElementById('calendario_id').value = appOpt.dataset.calendarioId || initialAppointment.calendario_id || '';
+          document.getElementById('slot_id').value = appOpt.dataset.slotId || initialAppointment.slot_id || '';
           document.getElementById('hora_inicio').value = appOpt.value || initialAppointment.time || '';
           document.getElementById('hora_fin').value = appOpt.dataset.horaFin || initialAppointment.hora_fin || '';
         }
@@ -487,9 +489,11 @@ document.getElementById('date').addEventListener('change', function(e){
 document.getElementById('time').addEventListener('change', function(e){
   const opt = e.target.selectedOptions && e.target.selectedOptions[0];
   const hidden = document.getElementById('calendario_id');
+  const hiddenSlot = document.getElementById('slot_id');
   if (!opt) { hidden.value = ''; return; }
   // dataset.calendarioId contiene el id; actualizar hidden
   hidden.value = opt.dataset && opt.dataset.calendarioId ? opt.dataset.calendarioId : '';
+  if (hiddenSlot) hiddenSlot.value = opt.dataset && opt.dataset.slotId ? opt.dataset.slotId : '';
   // sincronizar hora_inicio / hora_fin hidden
   const hi = opt.value || '';
   const hf = (opt.dataset && opt.dataset.horaFin) ? opt.dataset.horaFin : '';
@@ -534,6 +538,7 @@ window.addEventListener('DOMContentLoaded', async function(){
         tmp.value = initialAppointment.time;
         if (initialAppointment.hora_fin) tmp.dataset.horaFin = initialAppointment.hora_fin;
         if (initialAppointment.calendario_id) tmp.dataset.calendarioId = initialAppointment.calendario_id;
+        if (initialAppointment.slot_id) tmp.dataset.slotId = initialAppointment.slot_id;
         tmp.textContent = initialAppointment.time + (initialAppointment.hora_fin ? ` — ${initialAppointment.hora_fin}` : '') + ' (actual)';
         timeSel.appendChild(tmp);
         timeSel.value = tmp.value;
@@ -551,7 +556,9 @@ window.addEventListener('DOMContentLoaded', async function(){
 function validateAppointmentForm(event, form) {
   event.preventDefault();
   
-  const pacienteId = document.getElementById('paciente_id').value;
+  // paciente_id puede estar en un input hidden en la vista edit
+  const pacienteEl = document.getElementById('paciente_id');
+  const pacienteId = pacienteEl ? pacienteEl.value : '';
   const doctorId = document.getElementById('doctor_id').value;
   const fecha = document.getElementById('date').value;
   const hora = document.getElementById('time').value;
@@ -606,8 +613,15 @@ function validateAppointmentForm(event, form) {
     return false;
   }
   
-  // Mostrar confirmación
-  const pacienteNombre = document.querySelector('#paciente_id option:checked').textContent;
+  // Mostrar confirmación: si existe un select usamos su opción, si no usamos el hidden paciente_label
+  let pacienteNombre = '';
+  const pacienteOpt = document.querySelector('#paciente_id option:checked');
+  if (pacienteOpt) {
+    pacienteNombre = pacienteOpt.textContent;
+  } else {
+    const pl = document.getElementById('paciente_label');
+    pacienteNombre = pl ? pl.value : '';
+  }
   const doctorNombre = document.querySelector('#doctor_id option:checked').textContent;
   const sedeNombre = document.querySelector('#sede_id option:checked').textContent;
   
@@ -641,6 +655,15 @@ function validateAppointmentForm(event, form) {
         }
       });
       
+      // Ensure slot_id hidden is populated from selected option as a last-resort
+      try {
+        const selOpt = document.querySelector('#time option:checked');
+        const hiddenSlot = document.getElementById('slot_id');
+        if (selOpt && hiddenSlot && (!hiddenSlot.value || hiddenSlot.value === '')) {
+          if (selOpt.dataset && selOpt.dataset.slotId) hiddenSlot.value = selOpt.dataset.slotId;
+        }
+      } catch(e) { /* ignore */ }
+
       // Enviar formulario normalmente (el servidor redirigirá con mensaje de éxito)
       form.submit();
       
@@ -654,6 +677,15 @@ function validateAppointmentForm(event, form) {
       form.appendChild(cancelInput);
       
       // Enviar formulario normalmente (el servidor redirigirá con parámetro de cancelación)
+      // Also ensure slot_id present for consistency
+      try {
+        const selOpt = document.querySelector('#time option:checked');
+        const hiddenSlot = document.getElementById('slot_id');
+        if (selOpt && hiddenSlot && (!hiddenSlot.value || hiddenSlot.value === '')) {
+          if (selOpt.dataset && selOpt.dataset.slotId) hiddenSlot.value = selOpt.dataset.slotId;
+        }
+      } catch(e) { /* ignore */ }
+
       form.submit();
     }
   });

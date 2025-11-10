@@ -18,6 +18,15 @@ $r->get('/servicios', fn($req,$res)=>$res->json(['data'=>Service::allActive()]),
 
 
 // Doctores con especialidad
+$r->get('/doctors/{especialidad_id}', function($req,$res){
+	$espId = (int)($req->params['especialidad_id'] ?? 0);
+	$pdo = \App\Core\Database::pdo();
+	$stmt = $pdo->prepare("\n SELECT d.id, u.nombre, u.apellido, u.email, e.nombre AS especialidad_nombre, d.especialidad_id\n FROM doctores d\n JOIN usuarios u ON d.usuario_id = u.id\n LEFT JOIN especialidades e ON d.especialidad_id = e.id\n WHERE d.especialidad_id = :esp\n ORDER BY u.nombre\n ");
+	$stmt->execute(['esp' => $espId]);
+	$rows = $stmt->fetchAll();
+	return $res->json(['data'=>$rows]);
+}, ['json']);
+
 $r->get('/doctors', function($req,$res){
 $pdo = \App\Core\Database::pdo();
 $rows = $pdo->query("\n SELECT d.id, u.nombre, u.apellido, u.email, e.nombre AS especialidad_nombre\n FROM doctores d\n JOIN usuarios u ON d.usuario_id = u.id\n LEFT JOIN especialidades e ON d.especialidad_id = e.id\n ORDER BY u.nombre\n ")->fetchAll();
@@ -71,7 +80,8 @@ $r->get('/slots', function($req,$res){
 	try {
 		$pdo = \App\Core\Database::pdo();
 		// Primero intentar leer slots ya generados en slots_calendario (calendario existente)
-		$sql = "SELECT sc.hora_inicio, sc.hora_fin, sc.disponible, sc.reservado_por_cita_id, sc.calendario_id
+		// Incluir sc.id como slot_id para que el frontend pueda identificar el registro
+		$sql = "SELECT sc.id AS slot_id, sc.hora_inicio, sc.hora_fin, sc.disponible, sc.reservado_por_cita_id, sc.calendario_id
 			FROM slots_calendario sc
 			JOIN calendario c ON sc.calendario_id = c.id
 			LEFT JOIN horarios_medicos hm ON c.horario_id = hm.id
@@ -85,7 +95,7 @@ $r->get('/slots', function($req,$res){
 		$params = ['doctor_id' => $doctorId, 'fecha' => $date];
 		if ($locationId > 0) $params['location_id'] = $locationId;
 		$stmt->execute($params);
-		$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+			$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
 		$slots = [];
 		if ($rows && count($rows) > 0) {
@@ -96,6 +106,7 @@ $r->get('/slots', function($req,$res){
 					$hi = substr($r['hora_inicio'],0,5);
 					$hf = isset($r['hora_fin']) ? substr($r['hora_fin'],0,5) : null;
 					$slots[] = [
+						'slot_id' => $r['slot_id'] ?? ($r['id'] ?? null),
 						'calendario_id' => $r['calendario_id'] ?? null,
 						'hora_inicio' => $hi,
 						'hora_fin' => $hf
@@ -165,7 +176,8 @@ $r->get('/slots_db', function($req,$res){
 
 	try {
 		$pdo = \App\Core\Database::pdo();
-	$sql = "SELECT sc.hora_inicio, sc.hora_fin, sc.disponible, sc.reservado_por_cita_id, sc.calendario_id
+	// Incluir sc.id como slot_id en la selección para que el cliente reciba el identificador
+	$sql = "SELECT sc.id AS slot_id, sc.hora_inicio, sc.hora_fin, sc.disponible, sc.reservado_por_cita_id, sc.calendario_id
 		FROM slots_calendario sc
 				JOIN calendario c ON sc.calendario_id = c.id
 				LEFT JOIN horarios_medicos hm ON c.horario_id = hm.id
@@ -181,24 +193,66 @@ $r->get('/slots_db', function($req,$res){
 		$stmt->execute($params);
 		$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-		$slots = [];
-		foreach ($rows as $r) {
-			// considerar disponible solo si disponible truthy y no reservado
-			$disponible = isset($r['disponible']) ? (bool)$r['disponible'] : true;
-			$reservado = isset($r['reservado_por_cita_id']) && $r['reservado_por_cita_id'];
-			if ($disponible && !$reservado) {
-				// hora_inicio puede venir como 'HH:MM:SS' -> devolver 'HH:MM'
-				$hi = substr($r['hora_inicio'],0,5);
-				$hf = isset($r['hora_fin']) ? substr($r['hora_fin'],0,5) : null;
-				$slots[] = [
-					'calendario_id' => $r['calendario_id'] ?? null,
-					'hora_inicio' => $hi,
-					'hora_fin' => $hf
-				];
+			$slots = [];
+			foreach ($rows as $r) {
+				// considerar disponible solo si disponible truthy y no reservado
+				$disponible = isset($r['disponible']) ? (bool)$r['disponible'] : true;
+				$reservado = isset($r['reservado_por_cita_id']) && $r['reservado_por_cita_id'];
+				if ($disponible && !$reservado) {
+					// hora_inicio puede venir como 'HH:MM:SS' -> devolver 'HH:MM'
+					$hi = substr($r['hora_inicio'],0,5);
+					$hf = isset($r['hora_fin']) ? substr($r['hora_fin'],0,5) : null;
+					$slots[] = [
+						'slot_id' => $r['slot_id'] ?? ($r['id'] ?? null),
+						'calendario_id' => $r['calendario_id'] ?? null,
+						'hora_inicio' => $hi,
+						'hora_fin' => $hf
+					];
+				}
 			}
-		}
 
 		return $res->json(['date'=>$date, 'slots'=>$slots]);
+	} catch (\Throwable $e) {
+		return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
+	}
+}, ['json']);
+
+// Devuelve el id del slot (registro en slots_calendario) para una fecha/hora/doctor/sede
+$r->get('/slot_id', function($req,$res){
+	$date = $req->query['date'] ?? null;
+	$doctorId = (int)($req->query['doctor_id'] ?? 0);
+	$locationId = (int)($req->query['location_id'] ?? 0);
+	$horaInicio = (string)($req->query['hora_inicio'] ?? ''); // espera 'HH:MM' o 'HH:MM:SS'
+
+	if (!$date || !$doctorId || !$horaInicio) {
+		return $res->json(['message'=>'Bad Request (date, doctor_id y hora_inicio requeridos)'], 400);
+	}
+
+	try {
+		$pdo = \App\Core\Database::pdo();
+		$sql = "SELECT sc.id AS slot_id, sc.calendario_id, sc.hora_inicio, sc.hora_fin, sc.reservado_por_cita_id, sc.disponible
+				FROM slots_calendario sc
+				JOIN calendario c ON sc.calendario_id = c.id
+				LEFT JOIN horarios_medicos hm ON c.horario_id = hm.id
+				WHERE c.doctor_id = :doctor_id AND c.fecha = :fecha AND sc.hora_inicio LIKE :horaInicio";
+
+		if ($locationId > 0) {
+			$sql .= " AND hm.sede_id = :location_id";
+		}
+
+		$sql .= " ORDER BY sc.hora_inicio LIMIT 1";
+
+		$stmt = $pdo->prepare($sql);
+		$params = ['doctor_id' => $doctorId, 'fecha' => $date, 'horaInicio' => $horaInicio . '%'];
+		if ($locationId > 0) $params['location_id'] = $locationId;
+		$stmt->execute($params);
+		$row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+		if (!$row) {
+			return $res->json(['data' => null]);
+		}
+
+		return $res->json(['data' => $row]);
 	} catch (\Throwable $e) {
 		return $res->json(['message'=>'Error','error'=>$e->getMessage()], 500);
 	}
