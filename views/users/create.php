@@ -305,7 +305,6 @@
                                 oninput="this.value = this.value.replace(/[^0-9]/g, '').substring(0, 5)"
                             />
                             <small class="form-text">Se guarda como CMP-#####</small>
-                            </div>
                         </div>
                     </div>
                     
