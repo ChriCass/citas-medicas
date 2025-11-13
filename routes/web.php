@@ -86,3 +86,8 @@ $router->delete('/api/users/{id}', [UserController::class, 'destroy'], ['auth'])
 
 // Endpoint para verificar relaciones antes de eliminar usuario
 $router->get('/api/users/{id}/relationships', [UserController::class, 'getUserRelationships'], ['auth']);
+
+// Reportes (UC-13) - Solo superadmin usa el controlador para validar rol
+$router->get('/reports', [\App\Controllers\ReportsController::class, 'form'], ['auth']);
+$router->post('/reports/generate', [\App\Controllers\ReportsController::class, 'generate'], ['auth']);
+

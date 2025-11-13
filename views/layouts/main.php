@@ -126,6 +126,7 @@
         <a href="/citas/create" class="sb-link <?= $isActive('/citas/create') ? 'active':'' ?>">➕ Reservar cita</a>
         <a href="/doctor-schedules" class="sb-link <?= $isActive('/doctor-schedules') ? 'active':'' ?>">🕑 Horarios Doctores</a>
         <a href="/users" class="sb-link <?= $isActive('/users') ? 'active':'' ?>">👨‍⚕️ Usuarios</a>
+        <a href="/reports" class="sb-link <?= $isActive('/reports') ? 'active':'' ?>">📊 Reportes</a>
       <?php endif; ?>
 
       <?php if ($isCashier): ?>
