@@ -287,4 +287,111 @@ $r->get('/diagnosticos', function($req,$res){
 		return $res->json(['data'=>[], 'error'=>$e->getMessage()], 500);
 	}
 }, ['json']);
+
+// API para gestión de doctor-sede
+$r->get('/doctor-sede', function($req,$res){
+	try {
+		$pdo = \App\Core\Database::pdo();
+		$sql = "SELECT 
+					ds.sede_id, 
+					ds.doctor_id, 
+					ds.fecha_inicio, 
+					ds.fecha_fin,
+					s.nombre_sede AS sede_nombre,
+					u.nombre + ' ' + u.apellido AS doctor_nombre
+				FROM doctor_sede ds
+				JOIN sedes s ON ds.sede_id = s.id
+				JOIN doctores d ON ds.doctor_id = d.id
+				JOIN usuarios u ON d.usuario_id = u.id
+				ORDER BY u.nombre, s.nombre_sede";
+		$stmt = $pdo->query($sql);
+		$rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+		
+		// Debug: agregar log
+		error_log('Doctor-Sede rows: ' . print_r($rows, true));
+		
+		return $res->json(['success'=>true, 'data'=>$rows]);
+	} catch (\Throwable $e) {
+		error_log('Error en doctor-sede: ' . $e->getMessage());
+		return $res->json(['success'=>false, 'message'=>$e->getMessage()], 500);
+	}
+}, ['json']);
+
+$r->post('/doctor-sede', function($req,$res){
+	try {
+		$body = json_decode(file_get_contents('php://input'), true);
+		$doctorId = (int)($body['doctor_id'] ?? 0);
+		$sedeId = (int)($body['sede_id'] ?? 0);
+		$fechaInicio = $body['fecha_inicio'] ?? null;
+		$fechaFin = $body['fecha_fin'] ?? null;
+		
+		if (!$doctorId || !$sedeId || !$fechaInicio) {
+			return $res->json(['success'=>false, 'message'=>'Datos incompletos'], 400);
+		}
+		
+		$pdo = \App\Core\Database::pdo();
+		
+		// Verificar si ya existe la asignación
+		$stmt = $pdo->prepare("SELECT COUNT(*) FROM doctor_sede WHERE doctor_id = :doctor_id AND sede_id = :sede_id");
+		$stmt->execute(['doctor_id'=>$doctorId, 'sede_id'=>$sedeId]);
+		if ($stmt->fetchColumn() > 0) {
+			return $res->json(['success'=>false, 'message'=>'Esta asignación ya existe'], 400);
+		}
+		
+		// Insertar nueva asignación
+		$sql = "INSERT INTO doctor_sede (doctor_id, sede_id, fecha_inicio, fecha_fin) 
+				VALUES (:doctor_id, :sede_id, :fecha_inicio, :fecha_fin)";
+		$stmt = $pdo->prepare($sql);
+		$stmt->execute([
+			'doctor_id' => $doctorId,
+			'sede_id' => $sedeId,
+			'fecha_inicio' => $fechaInicio,
+			'fecha_fin' => $fechaFin
+		]);
+		
+		return $res->json(['success'=>true, 'message'=>'Asignación creada correctamente']);
+	} catch (\Throwable $e) {
+		return $res->json(['success'=>false, 'message'=>$e->getMessage()], 500);
+	}
+}, ['json']);
+
+$r->delete('/doctor-sede/{doctor_id}/{sede_id}', function($req,$res){
+	try {
+		$doctorId = (int)($req->params['doctor_id'] ?? 0);
+		$sedeId = (int)($req->params['sede_id'] ?? 0);
+		
+		if (!$doctorId || !$sedeId) {
+			return $res->json(['success'=>false, 'message'=>'Parámetros inválidos'], 400);
+		}
+		
+		$pdo = \App\Core\Database::pdo();
+		
+		// Verificar si el doctor tiene horarios programados en esta sede
+		$stmt = $pdo->prepare("
+			SELECT COUNT(*) as count 
+			FROM horarios_medicos 
+			WHERE doctor_id = :doctor_id AND sede_id = :sede_id
+		");
+		$stmt->execute(['doctor_id'=>$doctorId, 'sede_id'=>$sedeId]);
+		$result = $stmt->fetch(\PDO::FETCH_ASSOC);
+		
+		if ($result['count'] > 0) {
+			return $res->json([
+				'success'=>false, 
+				'message'=>'No se puede eliminar esta sede porque el doctor tiene horarios programados en ella. Primero elimine los horarios.',
+				'has_schedules'=>true,
+				'schedule_count'=>$result['count']
+			], 400);
+		}
+		
+		// Si no tiene horarios, proceder a eliminar
+		$stmt = $pdo->prepare("DELETE FROM doctor_sede WHERE doctor_id = :doctor_id AND sede_id = :sede_id");
+		$stmt->execute(['doctor_id'=>$doctorId, 'sede_id'=>$sedeId]);
+		
+		return $res->json(['success'=>true, 'message'=>'Asignación eliminada correctamente']);
+	} catch (\Throwable $e) {
+		error_log('Error al eliminar doctor-sede: ' . $e->getMessage());
+		return $res->json(['success'=>false, 'message'=>$e->getMessage()], 500);
+	}
+}, ['json']);
 });

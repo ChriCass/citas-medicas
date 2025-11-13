@@ -77,6 +77,7 @@ $router->get('/api/especialidades',        [ApiController::class, 'getEspecialid
 // Gestión de Usuarios (solo superadmin; el controlador valida el rol)
 $router->get('/users', [UserController::class, 'index'], ['auth']);
 $router->get('/users/create', [UserController::class, 'create'], ['auth']);
+$router->get('/users/headquarters', [UserController::class, 'headquarters'], ['auth']);
 $router->get('/users/{id}/edit', [UserController::class, 'edit'], ['auth']);
 $router->get('/api/users', [UserController::class, 'apiList'], ['auth']);
 $router->get('/api/users/{id}', [UserController::class, 'apiShow'], ['auth']);

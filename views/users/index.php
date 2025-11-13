@@ -3,9 +3,14 @@
     <div class="card-header">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <h2 style="margin: 0;">Gestión de Usuarios</h2>
-            <a href="/users/create" class="btn primary" style="text-decoration: none;">
-                ➕ Agregar Usuario
-            </a>
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="/users/headquarters" class="btn" style="text-decoration: none; background-color: #17a2b8; color: white;">
+                    🏢 Asignación de Sedes
+                </a>
+                <a href="/users/create" class="btn primary" style="text-decoration: none;">
+                    ➕ Agregar Usuario
+                </a>
+            </div>
         </div>
     </div>
     <div class="card-body">

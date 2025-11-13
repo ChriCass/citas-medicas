@@ -49,6 +49,12 @@ class UserController
         $this->verifySuperAdmin();
         return $response->view('users/create', ['title' => 'Crear Usuario']);
     }
+
+    public function headquarters(Request $request, Response $response)
+    {
+        $this->verifySuperAdmin();
+        return $response->view('users/headquarters', ['title' => 'Asignación de Sedes']);
+    }
     
     public function edit(Request $request, Response $response)
     {
@@ -68,6 +74,14 @@ class UserController
                               'usuarios.direccion', 'roles.nombre as rol')
             ->leftJoin('tiene_roles', 'usuarios.id', '=', 'tiene_roles.usuario_id')
             ->leftJoin('roles', 'tiene_roles.rol_id', '=', 'roles.id');
+        
+        // Si filtra por doctor, agregar información de doctores y especialidades
+        if ($roleFilter === 'doctor') {
+            $query->addSelect('doctores.id as doctor_id', 'doctores.cmp', 
+                            'doctores.especialidad_id', 'especialidades.nombre as especialidad_nombre')
+                  ->leftJoin('doctores', 'usuarios.id', '=', 'doctores.usuario_id')
+                  ->leftJoin('especialidades', 'doctores.especialidad_id', '=', 'especialidades.id');
+        }
         
         if ($roleFilter !== '') {
             $query->where('roles.nombre', $roleFilter);
