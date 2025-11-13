@@ -90,4 +90,5 @@ $router->get('/api/users/{id}/relationships', [UserController::class, 'getUserRe
 // Reportes (UC-13) - Solo superadmin usa el controlador para validar rol
 $router->get('/reports', [\App\Controllers\ReportsController::class, 'form'], ['auth']);
 $router->post('/reports/generate', [\App\Controllers\ReportsController::class, 'generate'], ['auth']);
+$router->get('/reports/export', [\App\Controllers\ReportsController::class, 'export'], ['auth']);
 

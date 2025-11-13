@@ -38,7 +38,12 @@ $rangeHasta = $hasta ?? '';
         <div><strong>Fecha/Hora:</strong> <?= htmlspecialchars($generatedAt) ?></div>
         <div><strong>Desde</strong> <?= htmlspecialchars($rangeDesde) ?> <strong>Hasta</strong> <?= htmlspecialchars($rangeHasta) ?></div>
     </div>
-    <p>Mostrando <?= count($rows) ?> registros.</p>
+    <p>
+        Mostrando <?= count($rows) ?> registros.
+        &nbsp;
+        <a class="btn primary" href="/reports/export?format=pdf&desde=<?= urlencode($desde ?? '') ?>&hasta=<?= urlencode($hasta ?? '') ?>&tipo=<?= urlencode($tipo ?? '') ?>">Exportar PDF</a>
+        <a class="btn" href="/reports/export?format=xlsx&desde=<?= urlencode($desde ?? '') ?>&hasta=<?= urlencode($hasta ?? '') ?>&tipo=<?= urlencode($tipo ?? '') ?>">Exportar Excel</a>
+    </p>
         <div class="table-responsive" style="padding-top:8px;">
             <table class="table">
                 <thead>
