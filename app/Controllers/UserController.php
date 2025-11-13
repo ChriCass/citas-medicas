@@ -126,12 +126,18 @@ class UserController
         $roleData = null;
         
         if ($user['rol'] === 'doctor') {
-            $doctor = Doctor::with('especialidad')
-                ->where('usuario_id', $id)
-                ->first();
+            $doctor = Doctor::where('usuario_id', $id)->first();
             if ($doctor) {
                 $roleData = $doctor->toArray();
-                $roleData['especialidad_nombre'] = $doctor->especialidad->nombre ?? null;
+                // Cargar la especialidad manualmente
+                if ($doctor->especialidad_id) {
+                    $especialidad = Especialidad::find($doctor->especialidad_id);
+                    if ($especialidad) {
+                        $especialidadArray = $especialidad->toArray();
+                        $roleData['especialidad_nombre'] = $especialidadArray['nombre'] ?? null;
+                        $roleData['especialidad'] = $especialidadArray;
+                    }
+                }
             }
         } elseif ($user['rol'] === 'paciente') {
             $paciente = Paciente::where('usuario_id', $id)->first();
