@@ -5,7 +5,9 @@
   "require": {
     "illuminate/database": "^10.49",
     "illuminate/events": "^10.49",
-    "nesbot/carbon": "^2.73"
+    "nesbot/carbon": "^2.73",
+    "phpoffice/phpspreadsheet": "^5.2",
+    "dompdf/dompdf": "^3.1"
   },
   "autoload": {
     "psr-4": {
