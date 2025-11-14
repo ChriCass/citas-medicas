@@ -69,27 +69,36 @@ $router->post('/pagos/{id}/editar',        [PaymentController::class, 'update'],
 $router->post('/pagos/{id}/eliminar',      [PaymentController::class, 'destroy'],       ['auth', 'cashier']);
 $router->get('/pagos/comprobante',         [PaymentController::class, 'receipt'],       ['auth', 'cashier']);
 
-// API endpoints
+// API endpoints (solo excepciones permitidas con prefijo /api)
 $router->get('/api/v1/pacientes/search',   [ApiController::class, 'searchPacientes'],   ['auth']);
 $router->get('/api/v1/slots',              [ApiController::class, 'getSlots'],           ['auth']);
-$router->get('/api/especialidades',        [ApiController::class, 'getEspecialidades'],  ['auth']);
+
+// Otros endpoints JSON sin prefijo /api
+$router->get('/especialidades',            [ApiController::class, 'getEspecialidades'],  ['auth']);
 
 // Gestión de Usuarios (solo superadmin; el controlador valida el rol)
 $router->get('/users', [UserController::class, 'index'], ['auth']);
 $router->get('/users/create', [UserController::class, 'create'], ['auth']);
 $router->get('/users/headquarters', [UserController::class, 'headquarters'], ['auth']);
 $router->get('/users/{id}/edit', [UserController::class, 'edit'], ['auth']);
-$router->get('/api/users', [UserController::class, 'apiList'], ['auth']);
-$router->get('/api/users/{id}', [UserController::class, 'apiShow'], ['auth']);
-$router->post('/api/users', [UserController::class, 'store'], ['auth']);
-$router->post('/api/users/{id}', [UserController::class, 'updateOrDelete'], ['auth']);
-$router->delete('/api/users/{id}', [UserController::class, 'destroy'], ['auth']);
+
+// Endpoints JSON de usuarios (con prefijo diferente para evitar conflictos)
+$router->get('/users/data', [UserController::class, 'apiList'], ['auth']);
+$router->get('/users/{id}/data', [UserController::class, 'apiShow'], ['auth']);
+$router->post('/users', [UserController::class, 'store'], ['auth']);
+$router->post('/users/{id}', [UserController::class, 'updateOrDelete'], ['auth']);
+$router->delete('/users/{id}', [UserController::class, 'destroy'], ['auth']);
 
 // Endpoint para verificar relaciones antes de eliminar usuario
-$router->get('/api/users/{id}/relationships', [UserController::class, 'getUserRelationships'], ['auth']);
+$router->get('/users/{id}/relationships', [UserController::class, 'getUserRelationships'], ['auth']);
 
 // Reportes (UC-13) - Solo superadmin usa el controlador para validar rol
 $router->get('/reports', [\App\Controllers\ReportsController::class, 'form'], ['auth']);
 $router->post('/reports/generate', [\App\Controllers\ReportsController::class, 'generate'], ['auth']);
 $router->get('/reports/export', [\App\Controllers\ReportsController::class, 'export'], ['auth']);
+
+// Gestión de Doctor-Sede (migrado desde API a controller web)
+$router->get('/doctor-sede', [\App\Controllers\DoctorSedeController::class, 'index'], ['auth']);
+$router->post('/doctor-sede', [\App\Controllers\DoctorSedeController::class, 'store'], ['auth']);
+$router->delete('/doctor-sede/{doctor_id}/{sede_id}', [\App\Controllers\DoctorSedeController::class, 'destroy'], ['auth']);
 

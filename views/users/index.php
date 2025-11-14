@@ -924,7 +924,7 @@
     // Cargar especialidades desde la API
     async function loadEspecialidades() {
         try {
-            const response = await fetch('/api/especialidades');
+            const response = await fetch('/especialidades');
             const data = await response.json();
             
             if (data.success) {
@@ -961,7 +961,7 @@
             if (roleFilter) params.append('role', roleFilter);
             if (search) params.append('search', search);
             
-            const response = await fetch(`/api/users?${params.toString()}`);
+            const response = await fetch(`/users/data?${params.toString()}`);
             const data = await response.json();
             
             if (data.success) {
@@ -1096,7 +1096,7 @@
     // Ver detalles del usuario
     async function viewUser(id) {
         try {
-            const response = await fetch(`/api/users/${id}`);
+            const response = await fetch(`/users/${id}/data`);
             const data = await response.json();
             
             if (data.success) {
@@ -1371,7 +1371,7 @@
     // Editar usuario
     async function editUser(id) {
         try {
-            const response = await fetch(`/api/users/${id}`);
+            const response = await fetch(`/users/${id}/data`);
             const data = await response.json();
             
             if (data.success) {
@@ -1563,7 +1563,7 @@
         console.log('Datos a enviar:', data);
         
         try {
-            const url = isEdit ? `/api/users/${userId}` : '/api/users';
+            const url = isEdit ? `/users/${userId}` : '/users';
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -1613,7 +1613,7 @@
     async function confirmDelete(id, name) {
         // Primero verificar si tiene relaciones
         try {
-            const response = await fetch(`/api/users/${id}/relationships`);
+            const response = await fetch(`/users/${id}/relationships`);
             const data = await response.json();
             
             if (data.success) {
@@ -1697,7 +1697,7 @@
     // Eliminar usuario
     async function deleteUser(id, name) {
         try {
-            const response = await fetch(`/api/users/${id}`, {
+            const response = await fetch(`/users/${id}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

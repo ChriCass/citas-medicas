@@ -394,7 +394,7 @@
         showLoading('doctors', true);
         
         try {
-            const response = await fetch('/api/users?role=doctor');
+            const response = await fetch('/users/data?role=doctor');
             const data = await response.json();
             
             if (data.success) {
@@ -433,7 +433,7 @@
     // Cargar asignaciones
     async function loadAssignments() {
         try {
-            const response = await fetch('/api/v1/doctor-sede');
+            const response = await fetch('/doctor-sede');
             const data = await response.json();
             
             console.log('=== Respuesta de API doctor-sede ===');
@@ -713,7 +713,7 @@
             for (const sedeId of sedesToRemove) {
                 console.log(`Eliminando asignación: doctor ${doctorId}, sede ${sedeId}`);
                 try {
-                    const response = await fetch(`/api/v1/doctor-sede/${doctorId}/${sedeId}`, {
+                    const response = await fetch(`/doctor-sede/${doctorId}/${sedeId}`, {
                         method: 'DELETE',
                         headers: {
                             'Content-Type': 'application/json'
@@ -774,7 +774,7 @@
             for (const sedeId of sedesToAdd) {
                 console.log(`Agregando asignación: doctor ${doctorId}, sede ${sedeId}`);
                 try {
-                    const response = await fetch('/api/v1/doctor-sede', {
+                    const response = await fetch('/doctor-sede', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'

@@ -680,9 +680,10 @@
     const userId = <?= isset($userId) ? $userId : 'null' ?>;
     
     // Cargar datos al iniciar
-    document.addEventListener('DOMContentLoaded', function() {
-        loadEspecialidades();
-        
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Cargar especialidades primero y esperar a que se complete
+        await loadEspecialidades();
+
         if (userId) {
             // Modo edición
             document.getElementById('formIcon').textContent = '✏️';
@@ -692,7 +693,7 @@
             document.getElementById('passwordHelp').style.display = 'block';
             document.getElementById('password').required = false;
             document.getElementById('userId').value = userId;
-            loadUserData(userId);
+            await loadUserData(userId);
         } else {
             // Modo creación - mostrar placeholder hasta que seleccionen un rol
             // No seleccionar ningún rol por defecto
@@ -702,30 +703,35 @@
     // Cargar especialidades
     async function loadEspecialidades() {
         try {
-            const response = await fetch('/api/especialidades');
+            const response = await fetch('/especialidades');
             const data = await response.json();
-            
+
             if (data.success) {
                 especialidades = data.data;
                 const select = document.getElementById('especialidad_id');
                 select.innerHTML = '<option value="">Seleccione una especialidad</option>';
-                
+
                 especialidades.forEach(esp => {
                     const option = document.createElement('option');
                     option.value = esp.id;
                     option.textContent = esp.nombre;
                     select.appendChild(option);
                 });
+                return especialidades;
+            } else {
+                console.error('La API de especialidades devolvió error:', data);
+                return [];
             }
         } catch (error) {
             console.error('Error al cargar especialidades:', error);
+            return [];
         }
     }
     
     // Cargar datos del usuario para edición
     async function loadUserData(id) {
         try {
-            const response = await fetch(`/api/users/${id}`);
+            const response = await fetch(`/users/${id}/data`);
             const data = await response.json();
             
             if (data.success) {
@@ -760,7 +766,28 @@
                     document.getElementById('contacto_emergencia_telefono').value = roleData.contacto_emergencia_telefono || '';
                     document.getElementById('contacto_emergencia_relacion').value = roleData.contacto_emergencia_relacion || '';
                 } else if (user.rol === 'doctor' && roleData) {
-                    document.getElementById('especialidad_id').value = roleData.especialidad_id || '';
+                    // Establecer especialidad con validación adicional
+                    const especialidadSelect = document.getElementById('especialidad_id');
+                    const especialidadId = roleData.especialidad_id || '';
+                    console.log('Estableciendo especialidad ID:', especialidadId);
+                    console.log('Especialidades disponibles:', especialidades);
+
+                    if (especialidadId && especialidadSelect) {
+                        especialidadSelect.value = especialidadId;
+                        // Verificar que se estableció correctamente
+                        if (especialidadSelect.value !== especialidadId) {
+                            console.warn('No se pudo establecer la especialidad. Buscando opción manualmente...');
+                            // Intentar encontrar la opción manualmente
+                            const option = especialidadSelect.querySelector(`option[value="${especialidadId}"]`);
+                            if (option) {
+                                especialidadSelect.value = especialidadId;
+                                option.selected = true;
+                            } else {
+                                console.error('No se encontró la opción para especialidad_id:', especialidadId);
+                            }
+                        }
+                    }
+
                     // Extraer solo los dígitos del CMP si tiene el formato CMP-#####
                     const cmpValue = roleData.cmp || '';
                     document.getElementById('cmp').value = cmpValue.replace('CMP-', '');
@@ -922,7 +949,7 @@
         
         try {
             const isEdit = !!userId;
-            const url = isEdit ? `/api/users/${userId}` : '/api/users';
+            const url = isEdit ? `/users/${userId}` : '/users';
             
             const response = await fetch(url, {
                 method: 'POST',
