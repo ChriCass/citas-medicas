@@ -1,0 +1,25 @@
+REFACTOR: Mover doctor-sede de API a controller web y corregir rutas
+
+=== CAMBIOS REALIZADOS ===
+
+1. DoctorSedeController
+   - Creado nuevo controller para gestionar asignaciones doctor-sede
+   - Movido desde API a rutas web
+
+2. Rutas Actualizadas
+   - Migrado doctor-sede desde /api/v1/doctor-sede a /doctor-sede
+   - Corregidas rutas de especialidades: /api/especialidades → /especialidades
+   - Actualizadas rutas de usuarios: /api/users/* → /users/data, /users/{id}/data
+
+3. Frontend Actualizado
+   - views/users/create.php: Corregido carga de especialidades en edición de doctores
+   - views/users/index.php: Actualizadas todas las llamadas a APIs
+   - views/users/headquarters.php: Actualizadas rutas de doctor-sede
+
+=== ARCHIVOS MODIFICADOS ===
+- app/Controllers/DoctorSedeController.php (nuevo)
+- routes/api.php (eliminadas rutas doctor-sede)
+- routes/web.php (reorganizadas rutas)
+- views/users/create.php (corregidas especialidades)
+- views/users/headquarters.php (actualizadas rutas)
+- views/users/index.php (actualizadas llamadas API)
