@@ -533,7 +533,7 @@
         <div class="feature-icon">👍</div>
         <h3 class="feature-title">Sin costes añadidos</h3>
         <p class="feature-description">
-          La reserva de cita es un servicio gratuito de Doctoralia.
+          La reserva de cita es un servicio gratuito de Sanar Bien! Paga después de ser atendido!
         </p>
       </div>
 
@@ -623,13 +623,13 @@
       <!-- Brand Column -->
       <div class="footer-column footer-brand">
         <div class="brand-logo">
-          <img src="/assets/img/doctoralia.png" alt="Doctoralia">
+          <img src="/assets/img/doctoralia.png" alt="logo Sanar Bien" />
            
         </div>
         <div class="brand-info">
-          Doctoralia Internet SL<br>
-          C/ Josep Pla 2 - Building B2, floor 13<br>
-          08019 Barcelona, Spain
+          Clinica Sanar Bien SAC<br>
+          av Brasil 321 - Edifico 3<br>
+          08019 Arequipa, Peru
         </div>
       </div>
 
@@ -641,7 +641,7 @@
         <a href="#">Perú</a>
       </div>
       <div class="footer-copyright">
-        www.doctoralia.pe © 2025 - Encuentra tu especialista y agenda cita
+        Sanar Bien SAC © 2025 - Encuentra tu especialista y agenda cita
       </div>
     </div>
 
