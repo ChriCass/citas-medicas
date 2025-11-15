@@ -66,7 +66,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><?= isset($title) ? htmlspecialchars($title) : 'App' ?></title>
+  <title><?= isset($title) ? htmlspecialchars($title) : 'Doctoralia' ?></title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/assets/img/doctoralia.png" />
+  <link rel="shortcut icon" type="image/png" href="/assets/img/doctoralia.png" />
+  <link rel="apple-touch-icon" href="/assets/img/doctoralia.png" />
+  
   <link rel="stylesheet" href="/assets/styles.css?v=palette-teal-ff0063" />
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -107,7 +113,9 @@
   <aside class="sidebar" data-collapsed="false" aria-label="Barra lateral de navegación">
     <div class="sb-header">
       <button class="sb-toggle" id="sbToggle" aria-label="Colapsar menú" title="Colapsar menú">☰</button>
-      <a class="brand" href="/dashboard">Scaffold</a>
+      <a class="brand" href="/dashboard">
+        <img src="/assets/img/doctoralia.png" alt="Doctoralia" style="height: 32px; width: auto;">
+      </a>
     </div>
 
     <div class="sb-user" role="region" aria-label="Usuario actual">
@@ -540,15 +548,17 @@
   <!-- ===== NAV SIMPLE (visitante sin sesión) ===== -->
   <header class="nav">
     <div class="wrap">
-      <a class="brand" href="/">Scaffold</a>
+      <a class="brand" href="/">
+        <img src="/assets/img/doctoralia.png" alt="Doctoralia" style="height: 32px; width: auto;">
+      </a>
       <nav class="actions" aria-label="Acciones de sesión">
         <a class="link" href="/login">Ingresar</a>
-        <a class="link" href="/register">Registro</a>
+       
       </nav>
     </div>
   </header>
 
-  <main class="container" role="main">
+  <main role="main">
     <?= $content ?? '' ?>
   </main>
   
