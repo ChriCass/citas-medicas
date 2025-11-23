@@ -121,6 +121,9 @@ phpunit.xml
 test_results/
 test_*.log
 
+# Cookies de sesión generadas por scripts de prueba
+cookies.txt
+
 # =====================================
 # ARCHIVOS DE DEPLOYMENT
 # =====================================
