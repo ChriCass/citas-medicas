@@ -430,4 +430,77 @@ class PacienteController
             return $res->json(['message' => 'Error', 'error' => $e->getMessage()], 500);
         }
     }
+
+    public function register(Request $req, Response $res)
+    {
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        // Validar campos requeridos
+        $required = ['nombre', 'apellido', 'email', 'password', 'dni'];
+        foreach ($required as $field) {
+            if (empty($data[$field])) {
+                return $res->json(['success' => false, 'message' => "El campo $field es requerido"], 400);
+            }
+        }
+        
+        // Verificar email duplicado
+        $existing = User::where('email', $data['email'])->first();
+        if ($existing) {
+            return $res->json(['success' => false, 'message' => 'El email ya está registrado'], 400);
+        }
+        
+        // Verificar DNI duplicado
+        $existingDni = User::where('dni', $data['dni'])->first();
+        if ($existingDni) {
+            return $res->json(['success' => false, 'message' => 'El DNI ya está registrado'], 400);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // 1. Crear usuario
+            $usuario = new User();
+            $usuario->nombre = $data['nombre'];
+            $usuario->apellido = $data['apellido'];
+            $usuario->email = $data['email'];
+            $usuario->contrasenia = password_hash($data['password'], PASSWORD_DEFAULT);
+            $usuario->dni = $data['dni'];
+            $usuario->telefono = $data['telefono'];
+            $usuario->direccion = $data['direccion'];
+            $usuario->save();
+            
+            // 2. Crear paciente
+            $paciente = new Paciente();
+            $paciente->usuario_id = $usuario->id;
+            $paciente->save();
+            
+            // 3. Generar número de historia clínica
+            $hc = 'HC-' . $paciente->id . date('Ymd');
+            $paciente->numero_historia_clinica = $hc;
+            $paciente->save();
+            
+            // 4. Asignar rol de paciente (rol_id = 3)
+            DB::table('tiene_roles')->insert([
+                'usuario_id' => $usuario->id,
+                'rol_id' => 3,
+                'creado_en' => date('Y-m-d H:i:s')
+            ]);
+            
+            DB::commit();
+            
+            return $res->json([
+                'success' => true,
+                'message' => 'Registro exitoso',
+                'data' => [
+                    'usuario_id' => $usuario->id,
+                    'paciente_id' => $paciente->id,
+                    'numero_historia_clinica' => $hc
+                ]
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return $res->json(['success' => false, 'message' => 'Error al registrar: ' . $e->getMessage()], 500);
+        }
+    }
 }

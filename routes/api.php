@@ -311,5 +311,5 @@ $r->delete('/pacientes/appointments/{id}', [\App\Controllers\PacienteController:
 // Pagos
 $r->get('/pacientes/payments', [\App\Controllers\PacienteController::class, 'getPayments'], ['json']);
 
-
+$r->post('/register', [\App\Controllers\PacienteController::class, 'register'], ['json']);
 });
