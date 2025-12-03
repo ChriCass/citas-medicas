@@ -441,18 +441,7 @@ class Appointment extends Model
      * Modifica una cita y maneja la reserva de slots en slots_calendario.
      * - Libera el slot anterior (si estaba reservado por esta cita)
      * - Reserva el nuevo slot indicado por $calendarioId (si se proporciona)
-     * Todo dentro de una transacción para mantener consistencia.
-     *
-     * @param int $citaId
-     * @param int $pacienteId
-     * @param int|null $doctorId
-     * @param int|null $sedeId
-     * @param string|null $fecha
-     * @param string|null $horaInicio
-     * @param string|null $horaFin
-     * @param string|null $razon
-     * @param int|null $calendarioId
-     * @return bool
+     * Todo dentro de una transacción para mantener consistencia.     
      */
     public static function modifyAppointment($citaId, $doctorId, $sedeId, $fecha, $horaInicio, $horaFin, $razon, $calendarioId = null, $slotId = null)
     {
