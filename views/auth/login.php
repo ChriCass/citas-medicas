@@ -23,10 +23,10 @@
   <form method="POST" action="/login" style="display: flex; flex-direction: column; gap: 1rem;" onsubmit="return validateLoginForm(event, this);">
     <input type="hidden" name="_csrf" value="<?= htmlspecialchars(\App\Core\Csrf::token()) ?>">
 
-    <input name="email" type="email" placeholder="Email" required 
+    <input name="email" type="email" placeholder="Email" required autocomplete="off"
            style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
 
-    <input name="password" type="password" placeholder="Contraseña" required 
+    <input name="password" type="password" placeholder="Contraseña" required autocomplete="off"
            style="padding: 0.5rem 0.75rem; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem;">
 
     <button type="submit" style="

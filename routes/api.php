@@ -289,5 +289,27 @@ $r->get('/diagnosticos', function($req,$res){
 }, ['json']);
 
 
+// ========================================
+// ENDPOINTS PARA PACIENTES (RESTful)
+// ========================================
 
+// Autenticación
+$r->post('/pacientes/auth/login', [\App\Controllers\PacienteController::class, 'login'], ['json']);
+$r->post('/pacientes/auth/logout', [\App\Controllers\PacienteController::class, 'logout'], ['json']);
+
+// Perfil
+$r->get('/pacientes/profile', [\App\Controllers\PacienteController::class, 'getProfile'], ['json']);
+$r->put('/pacientes/profile', [\App\Controllers\PacienteController::class, 'updateProfile'], ['json']);
+
+// Citas
+$r->get('/pacientes/appointments', [\App\Controllers\PacienteController::class, 'getAppointments'], ['json']);
+$r->get('/pacientes/appointments/upcoming', [\App\Controllers\PacienteController::class, 'getUpcomingAppointments'], ['json']);
+$r->get('/pacientes/appointments/{id}', [\App\Controllers\PacienteController::class, 'getAppointment'], ['json']);
+$r->post('/pacientes/appointments', [\App\Controllers\PacienteController::class, 'createAppointment'], ['json']);
+$r->delete('/pacientes/appointments/{id}', [\App\Controllers\PacienteController::class, 'cancelAppointment'], ['json']);
+
+// Pagos
+$r->get('/pacientes/payments', [\App\Controllers\PacienteController::class, 'getPayments'], ['json']);
+
+$r->post('/register', [\App\Controllers\PacienteController::class, 'register'], ['json']);
 });
