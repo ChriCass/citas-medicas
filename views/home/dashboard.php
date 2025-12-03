@@ -57,7 +57,7 @@ $upcoming = $upcoming ?? [];
       Ver Citas
     </a>
 
-    <?php if ($roleNorm === 'superadmin'): ?>
+    <?php if ($roleNorm === 'superadmin' || $roleNorm === 'patient' || $roleNorm === 'paciente'): ?>
       <a href="/citas/create" style="
         padding: 0.5rem 1rem;
         background-color: #50E3C2;

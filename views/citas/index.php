@@ -1,7 +1,7 @@
 <?php $role = $user['rol'] ?? ''; ?>
 <h1>Citas</h1>
 
-<?php if ($role === 'superadmin'): ?>
+<?php if (in_array($role, ['superadmin','paciente'], true)): ?>
   <a class="btn ghost" href="/citas/create">➕ Reservar nueva</a>
 <?php endif; ?>
 

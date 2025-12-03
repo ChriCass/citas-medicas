@@ -56,7 +56,7 @@ class AppointmentController
     {
         $user = $_SESSION['user'] ?? null; 
         if (!$user) return $res->redirect('/login');
-        Auth::abortUnless($res, ['superadmin']); // Solo superadmin crea
+        Auth::abortUnless($res, ['superadmin','paciente']); // Allow superadmin and paciente to create
 
         // Obtener todos los pacientes usando Eloquent
         $pacientes = User::patients(null, 300);
@@ -72,7 +72,7 @@ class AppointmentController
     {
         $user = $_SESSION['user'] ?? null; 
         if (!$user) return $res->redirect('/login');
-        Auth::abortUnless($res, ['superadmin']);
+        Auth::abortUnless($res, ['superadmin','paciente']);
 
         // Verificar si es una cancelación
         if (isset($_POST['cancel'])) {

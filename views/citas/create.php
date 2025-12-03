@@ -1,5 +1,18 @@
 <?php $role = $_SESSION['user']['rol'] ?? ''; ?>
-<?php if ($role !== 'superadmin'): ?>
+<?php $currentUserId = (int)($_SESSION['user']['id'] ?? 0); ?>
+<?php
+// Si el usuario es paciente, determinar el paciente.id correspondiente al usuario logueado
+$selectedPacienteId = null;
+if ($role === 'paciente') {
+  foreach (($pacientes ?? []) as $pacienteCandidate) {
+    if ((int)($pacienteCandidate['usuario_id'] ?? 0) === $currentUserId) {
+      $selectedPacienteId = (int)$pacienteCandidate['id'];
+      break;
+    }
+  }
+}
+?>
+<?php if (!in_array($role, ['superadmin','paciente'], true)): ?>
   <div class="alert mt-2">No tienes acceso a esta pantalla.</div>
 <?php else: ?>
 <h1>Reservar cita</h1>
@@ -13,13 +26,17 @@
 
   <div class="row">
     <label class="label" for="paciente_id">Paciente Seleccionado</label>
-    <select class="input" name="paciente_id" id="paciente_id" required>
+    <select class="input" name="paciente_id" id="paciente_id" required<?= $role === 'paciente' ? ' disabled' : '' ?>>
       <option value="">— Selecciona un paciente —</option>
       <?php foreach (($pacientes ?? []) as $p): ?>
-        <option value="<?= (int)$p['id'] ?>" data-dni="<?= htmlspecialchars($p['dni'] ?? '') ?>" data-user-id="<?= (int)$p['usuario_id'] ?>">
+        <option value="<?= (int)$p['id'] ?>" data-dni="<?= htmlspecialchars($p['dni'] ?? '') ?>" data-user-id="<?= (int)$p['usuario_id'] ?>"<?= ($role === 'paciente' && (int)($p['usuario_id'] ?? 0) === $currentUserId) ? ' selected' : '' ?>>
           <?= htmlspecialchars(($p['nombre'] ?? '').' '.($p['apellido'] ?? '')) ?> — DNI: <?= htmlspecialchars($p['dni'] ?? '') ?> — ID: <?= (int)$p['usuario_id'] ?>
         </option>
       <?php endforeach; ?>
+      <?php if ($role === 'paciente'): ?>
+        <!-- Campo hidden para enviar el paciente_id cuando el select está deshabilitado -->
+        <input type="hidden" name="paciente_id" value="<?= htmlspecialchars($selectedPacienteId ?? '') ?>">
+      <?php endif; ?>
     </select>
   </div>
 
