@@ -676,6 +676,46 @@ class DoctorScheduleController
         $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest';
 
         try {
+            // Antes de eliminar: verificar dependencias que impiden borrado
+            // slots_calendario con reservado_por_cita_id IS NOT NULL
+            // citas que referencian calendarios de este horario (estado distinto de 'cancelado')
+            try {
+                $stmtCheck = $pdo->prepare('SELECT COUNT(*) AS cnt FROM slots_calendario WHERE horario_id = :id AND reservado_por_cita_id IS NOT NULL');
+                $stmtCheck->execute([':id' => $id]);
+                $row = $stmtCheck->fetch();
+                $reservedSlotsCount = (int)($row['cnt'] ?? 0);
+
+                $stmtCheck2 = $pdo->prepare("SELECT COUNT(*) AS cnt FROM citas c JOIN calendario cal ON c.calendario_id = cal.id WHERE cal.horario_id = :id AND (c.estado IS NULL OR c.estado != 'cancelado')");
+                $stmtCheck2->execute([':id' => $id]);
+                $row2 = $stmtCheck2->fetch();
+                $relatedAppointmentsCount = (int)($row2['cnt'] ?? 0);
+            } catch (\Throwable $e) {
+                // Si falla la verificación, responder con error apropiado
+                try { $pdo->rollBack(); } catch (\Throwable $_) {}
+                if ($isAjax) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    http_response_code(500);
+                    echo json_encode(['error' => 'Error al verificar dependencias: ' . $e->getMessage()]);
+                    return null;
+                }
+                $_SESSION['flash'] = ['error' => 'Error al verificar dependencias: ' . $e->getMessage()];
+                $sedeForUrl = $redirectSede === null ? 0 : (int)$redirectSede;
+                return $res->redirect('/doctor-schedules/' . (int)$redirectDoctor . '/' . $sedeForUrl . '/' . (int)$targetMonth . '/' . (int)$targetYear);
+            }
+
+            if ($reservedSlotsCount > 0 || $relatedAppointmentsCount > 0) {
+                $msg = 'No es posible eliminar el horario: existen citas o slots reservados asociados. Primero elimina o reasigna las citas.';
+                if ($isAjax) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    http_response_code(409);
+                    echo json_encode(['error' => $msg]);
+                    return null;
+                }
+                $_SESSION['flash'] = ['error' => $msg];
+                $sedeForUrl = $redirectSede === null ? 0 : (int)$redirectSede;
+                return $res->redirect('/doctor-schedules/' . (int)$redirectDoctor . '/' . $sedeForUrl . '/' . (int)$targetMonth . '/' . (int)$targetYear);
+            }
+
             $pdo->beginTransaction();
 
             // Borrar slots asociados (si existen)
