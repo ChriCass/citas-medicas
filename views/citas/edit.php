@@ -89,7 +89,7 @@ foreach (($doctores ?? []) as $dd) {
     <input class="input" type="text" name="razon" id="notes" maxlength="200" placeholder="Opcional" value="<?= htmlspecialchars($cita['razon'] ?? '') ?>">
   </div>
 
-  <button class="btn primary" type="submit">Confirmar</button>
+  <button class="btn primary" type="submit">Modificar</button>
 </form>
 
 <!-- flatpickr (CDN) -->
@@ -188,24 +188,31 @@ async function loadSlots(){
           document.getElementById('slot_id').value = found.dataset.slotId || initialAppointment.slot_id || '';
           document.getElementById('hora_inicio').value = found.value || initialAppointment.time || '';
           document.getElementById('hora_fin').value = found.dataset.horaFin || initialAppointment.hora_fin || '';
+          return; // ya quedó seleccionada
         } else {
           // si no existe (slot reservado por la propia cita o eliminado), insertar opción "actual"
-          const appOpt = document.createElement('option');
-          appOpt.value = initialAppointment.time;
-          if (initialAppointment.calendario_id) appOpt.dataset.calendarioId = initialAppointment.calendario_id;
-          if (initialAppointment.slot_id) appOpt.dataset.slotId = initialAppointment.slot_id;
-          if (initialAppointment.hora_fin) appOpt.dataset.horaFin = initialAppointment.hora_fin;
-          appOpt.textContent = initialAppointment.time + (initialAppointment.hora_fin ? ` — ${initialAppointment.hora_fin}` : '') + ' (actual)';
-          // insertar justo después de la opción por defecto
-          const first = sel.querySelector('option');
-          if (first) sel.insertBefore(appOpt, first.nextSibling);
-          sel.value = appOpt.value;
-          document.getElementById('calendario_id').value = appOpt.dataset.calendarioId || initialAppointment.calendario_id || '';
-          document.getElementById('slot_id').value = appOpt.dataset.slotId || initialAppointment.slot_id || '';
-          document.getElementById('hora_inicio').value = appOpt.value || initialAppointment.time || '';
-          document.getElementById('hora_fin').value = appOpt.dataset.horaFin || initialAppointment.hora_fin || '';
+          // Sólo insertar si la fecha seleccionada coincide con la fecha original de la cita
+          const selectedDate = document.getElementById('date') ? document.getElementById('date').value : '';
+          if (initialAppointment.date && initialAppointment.date === selectedDate) {
+            const appOpt = document.createElement('option');
+            appOpt.value = initialAppointment.time;
+            if (initialAppointment.calendario_id) appOpt.dataset.calendarioId = initialAppointment.calendario_id;
+            if (initialAppointment.slot_id) appOpt.dataset.slotId = initialAppointment.slot_id;
+            if (initialAppointment.hora_fin) appOpt.dataset.horaFin = initialAppointment.hora_fin;
+            appOpt.textContent = initialAppointment.time + (initialAppointment.hora_fin ? ` — ${initialAppointment.hora_fin}` : '') + ' (actual)';
+            // insertar justo después de la opción por defecto
+            const first = sel.querySelector('option');
+            if (first) sel.insertBefore(appOpt, first.nextSibling);
+            sel.value = appOpt.value;
+            document.getElementById('calendario_id').value = appOpt.dataset.calendarioId || initialAppointment.calendario_id || '';
+            document.getElementById('slot_id').value = appOpt.dataset.slotId || initialAppointment.slot_id || '';
+            document.getElementById('hora_inicio').value = appOpt.value || initialAppointment.time || '';
+            document.getElementById('hora_fin').value = appOpt.dataset.horaFin || initialAppointment.hora_fin || '';
+            return; // ya quedó seleccionada
+          }
+          // Si no coincide la fecha, no insertamos la opción "actual" y permitimos
+          // que se seleccione la primera opción real más abajo.
         }
-        return; // ya quedó seleccionada
       }
     } catch(e) {
       console.error('Inicializacion hora cita error', e);
@@ -532,8 +539,12 @@ window.addEventListener('DOMContentLoaded', async function(){
     if (initialAppointment && initialAppointment.time) {
       // valor inicial de hora_inicio/hora_fin ya puesto en inputs hidden por PHP
       // asegurar que el select muestre algo hasta que loadSlots lo cargue
+      // Sólo agregar la opción temporal si la fecha actual del input coincide
+      // con la fecha original de la cita; evitamos mostrar "(actual)" para
+      // otras fechas.
       const timeSel = document.getElementById('time');
-      if (timeSel && !timeSel.querySelector(`option[value="${initialAppointment.time}"]`)) {
+      const currentDate = document.getElementById('date') ? document.getElementById('date').value : '';
+      if (timeSel && !timeSel.querySelector(`option[value="${initialAppointment.time}"]`) && initialAppointment.date && initialAppointment.date === currentDate) {
         const tmp = document.createElement('option');
         tmp.value = initialAppointment.time;
         if (initialAppointment.hora_fin) tmp.dataset.horaFin = initialAppointment.hora_fin;
