@@ -448,47 +448,97 @@ class Appointment extends Model
         // Calcular hora_fin si no viene explícita
         $horaFinCalculada = $horaFin ?: date('H:i:s', strtotime(($horaInicio ?? '00:00:00') . ' +15 minutes'));
 
-        // Buscar la cita
-        $appointment = static::find($citaId);
-        if (!$appointment) return false;
-
         DB::beginTransaction();
         try {
-            $oldCalendario = $appointment->calendario_id ?? null;
+            // PASO 1: Obtener la cita y su row_version para verificación optimista
+            $appointmentRow = DB::selectOne(
+                "SELECT *, row_version FROM citas WHERE id = ?",
+                [$citaId]
+            );
+            
+            if (!$appointmentRow) {
+                DB::rollBack();
+                return false;
+            }
+            
+            $citaRowVersion = $appointmentRow->row_version;
+            $oldCalendario = $appointmentRow->calendario_id ?? null;
 
+            // PASO 2: PRIMERO actualizar la cita con bloqueo optimista
+            // Esto asegura que solo UNA sesión puede proceder
+            $citaRowVersionHex = '0x' . bin2hex($citaRowVersion);
+            
+            $affectedCita = DB::update(
+                "UPDATE citas 
+                 SET doctor_id = ?, sede_id = ?, fecha = ?, hora_inicio = ?, hora_fin = ?, razon = ?, calendario_id = ?
+                 WHERE id = ? AND row_version = " . $citaRowVersionHex,
+                [
+                    $doctorId,
+                    $sedeId,
+                    $fecha,
+                    $horaInicio,
+                    $horaFinCalculada,
+                    $razon,
+                    $calendarioId ?? $oldCalendario,
+                    $citaId
+                ]
+            );
+            
+            error_log("Cita update with optimistic lock: affected=$affectedCita for citaId=$citaId");
+            
+            if ($affectedCita <= 0) {
+                // El row_version de la cita cambió - otra sesión la modificó primero
+                error_log("Conflict: cita $citaId was modified by another session");
+                DB::rollBack();
+                return false;
+            }
+
+            // PASO 3: Ahora que tenemos la "propiedad" de la cita, manejar los slots
             // Obtener slot anterior (si existe) reservado por esta cita
-            $oldSlot = DB::table('slots_calendario')
-                ->where('reservado_por_cita_id', $citaId)
-                ->first();
+            $oldSlot = DB::selectOne(
+                "SELECT id, calendario_id, disponible, reservado_por_cita_id, row_version
+                 FROM slots_calendario 
+                 WHERE reservado_por_cita_id = ?",
+                [$citaId]
+            );
             $oldSlotId = $oldSlot->id ?? null;
 
             error_log("modifyAppointment: citaId=$citaId, oldCalendario=$oldCalendario, oldSlotId=$oldSlotId, newCalendario=$calendarioId, newSlotId=$slotId");
 
-            // Si se proporcionó slotId, intentamos reservar el slot por id
+            // Si se proporcionó slotId, intentamos reservar el nuevo slot
             if ($slotId) {
-                // Reservar el nuevo slot si está libre o ya reservado por esta cita
-                $affected = DB::table('slots_calendario')
-                    ->where('id', $slotId)
-                    ->where(function($q) use ($citaId) {
-                        $q->whereNull('reservado_por_cita_id')
-                          ->orWhere('reservado_por_cita_id', $citaId);
-                    })
-                    ->update([
-                        'reservado_por_cita_id' => $citaId,
-                        'disponible' => 0
-                    ]);
-
-                error_log("Reserved by slotId: $affected rows for slotId=$slotId");
-
-                if ($affected <= 0) {
+                // Obtener el slot destino con su row_version
+                $targetSlot = DB::selectOne(
+                    "SELECT id, calendario_id, disponible, reservado_por_cita_id, row_version
+                     FROM slots_calendario 
+                     WHERE id = ? 
+                       AND (reservado_por_cita_id IS NULL OR reservado_por_cita_id = ?)",
+                    [$slotId, $citaId]
+                );
+                
+                if (!$targetSlot) {
+                    // El slot no está disponible - rollback
                     DB::rollBack();
                     return false;
                 }
+                
+                $rowVersion = $targetSlot->row_version;
+                $rowVersionHex = '0x' . bin2hex($rowVersion);
+                
+                // Reservar el nuevo slot con bloqueo optimista
+                $affected = DB::update(
+                    "UPDATE slots_calendario 
+                     SET reservado_por_cita_id = ?, disponible = 0 
+                     WHERE id = ? AND row_version = " . $rowVersionHex,
+                    [$citaId, $slotId]
+                );
 
-                // Si el slot reservado tiene un calendario_id asociado, actualizar la cita con ese calendario_id
-                $slotRow = DB::table('slots_calendario')->where('id', $slotId)->first();
-                if ($slotRow && isset($slotRow->calendario_id)) {
-                    $appointment->calendario_id = $slotRow->calendario_id;
+                error_log("Reserved by slotId with optimistic lock: $affected rows for slotId=$slotId");
+
+                if ($affected <= 0) {
+                    // El slot fue tomado por otra persona - rollback
+                    DB::rollBack();
+                    return false;
                 }
 
                 // Liberar slot anterior si era distinto
@@ -501,54 +551,51 @@ class Appointment extends Model
                             'disponible' => 1
                         ]);
                 }
-            } else {
-                // No se proporcionó slotId -> caer en comportamiento por calendario_id
-                if ($calendarioId && $calendarioId != $oldCalendario) {
-                    // Reservar calendario_id como antes
-                    $affected = DB::table('slots_calendario')
-                        ->where('calendario_id', $calendarioId)
-                        ->where(function($q) use ($citaId) {
-                            $q->whereNull('reservado_por_cita_id')
-                              ->orWhere('reservado_por_cita_id', $citaId);
-                        })
+            } else if ($calendarioId && $calendarioId != $oldCalendario) {
+                // No se proporcionó slotId pero sí calendarioId diferente
+                $targetSlot = DB::selectOne(
+                    "SELECT id, calendario_id, disponible, reservado_por_cita_id, row_version
+                     FROM slots_calendario 
+                     WHERE calendario_id = ? 
+                       AND (reservado_por_cita_id IS NULL OR reservado_por_cita_id = ?)",
+                    [$calendarioId, $citaId]
+                );
+                
+                if (!$targetSlot) {
+                    DB::rollBack();
+                    return false;
+                }
+                
+                $targetSlotId = $targetSlot->id;
+                $rowVersion = $targetSlot->row_version;
+                $rowVersionHex = '0x' . bin2hex($rowVersion);
+                
+                $affected = DB::update(
+                    "UPDATE slots_calendario 
+                     SET reservado_por_cita_id = ?, disponible = 0 
+                     WHERE id = ? AND row_version = " . $rowVersionHex,
+                    [$citaId, $targetSlotId]
+                );
+
+                if ($affected <= 0) {
+                    DB::rollBack();
+                    return false;
+                }
+
+                // Liberar antiguo slot si existía
+                if ($oldSlotId) {
+                    DB::table('slots_calendario')
+                        ->where('id', $oldSlotId)
+                        ->where('reservado_por_cita_id', $citaId)
                         ->update([
-                            'reservado_por_cita_id' => $citaId,
-                            'disponible' => 0
+                            'reservado_por_cita_id' => null,
+                            'disponible' => 1
                         ]);
-
-                    if ($affected <= 0) {
-                        DB::rollBack();
-                        return false;
-                    }
-
-                    // liberar antiguo calendario si existía
-                    if ($oldCalendario && $oldCalendario != $calendarioId) {
-                        DB::table('slots_calendario')
-                            ->where('calendario_id', $oldCalendario)
-                            ->where('reservado_por_cita_id', $citaId)
-                            ->update([
-                                'reservado_por_cita_id' => null,
-                                'disponible' => 1
-                            ]);
-                    }
                 }
             }
 
-            // PASO 3: Actualizar la cita (no se modifica el paciente)
-            $appointment->doctor_id = $doctorId;
-            $appointment->sede_id = $sedeId;
-            $appointment->fecha = $fecha;
-            $appointment->hora_inicio = $horaInicio;
-            $appointment->hora_fin = $horaFinCalculada;
-            $appointment->razon = $razon;
-            // Actualizar el calendario_id (puede ser null si no hay nuevo calendario)
-            $appointment->calendario_id = $calendarioId ?? $oldCalendario;
-
-            $saved = $appointment->save();
-            error_log("Appointment updated: " . ($saved ? "YES" : "NO") . ", new calendario_id=" . ($appointment->calendario_id ?? "null"));
-
             DB::commit();
-            return (bool)$saved;
+            return true;
         } catch (\Throwable $e) {
             error_log("Exception in modifyAppointment: " . $e->getMessage() . " | " . $e->getTraceAsString());
             DB::rollBack();
@@ -567,8 +614,40 @@ class Appointment extends Model
     , ?int $calendarioId = null, ?string $slotHora = null
     ): int {
         // Crear cita y, si se proporciona calendario_id + slotHora, marcar el slot como reservado
+        // Se utiliza bloqueo optimista con row_version para evitar reservas concurrentes
         DB::beginTransaction();
         try {
+            // Si recibimos calendario_id y slotHora, primero verificamos y reservamos el slot
+            // usando bloqueo optimista antes de crear la cita
+            $slotId = null;
+            $rowVersion = null;
+            
+            if ($calendarioId && $slotHora) {
+                // Obtener el slot candidato disponible con su row_version
+                // En SQL Server, row_version es de tipo timestamp (binario de 8 bytes)
+                // Lo obtenemos para implementar bloqueo optimista
+                $slot = DB::selectOne(
+                    "SELECT id, calendario_id, hora_inicio, hora_fin, disponible, 
+                            reservado_por_cita_id, row_version
+                     FROM slots_calendario 
+                     WHERE calendario_id = ? 
+                       AND hora_inicio LIKE ? 
+                       AND reservado_por_cita_id IS NULL",
+                    [$calendarioId, $slotHora . '%']
+                );
+                
+                if (!$slot) {
+                    // El slot ya no está disponible
+                    DB::rollBack();
+                    throw new \Exception('El slot ya fue reservado por otro paciente');
+                }
+                
+                $slotId = $slot->id;
+                // Guardar row_version para verificación posterior
+                $rowVersion = $slot->row_version;
+            }
+
+            // Crear la cita
             $appointment = new static();
             $appointment->paciente_id = $pacienteId;
             $appointment->doctor_id = $doctorId;
@@ -584,22 +663,25 @@ class Appointment extends Model
 
             $createdId = $appointment->id;
 
-            // Si recibimos calendario_id y slotHora (HH:MM) intentamos actualizar el slot correspondiente
-            if ($calendarioId && $slotHora) {
-                // Buscar slot por calendario_id y hora_inicio (match por prefijo HH:MM)
-                $affected = DB::table('slots_calendario')
-                    ->where('calendario_id', $calendarioId)
-                    ->where('hora_inicio', 'like', $slotHora . '%')
-                    ->whereNull('reservado_por_cita_id')
-                    ->update([
-                        'reservado_por_cita_id' => $createdId,
-                        'disponible' => 0  // Marcar como no disponible
-                    ]);
+            // Si teníamos un slot candidato, intentamos reservarlo con bloqueo optimista
+            if ($slotId && $rowVersion !== null) {
+                // Convertir row_version a formato hexadecimal para usarlo en SQL
+                // Esto evita problemas de conversión de tipos binarios en los parámetros
+                $rowVersionHex = '0x' . bin2hex($rowVersion);
+                
+                // Actualizar el slot verificando que row_version no haya cambiado (bloqueo optimista)
+                // Usamos el valor hexadecimal directamente en la consulta SQL
+                $affected = DB::update(
+                    "UPDATE slots_calendario 
+                     SET reservado_por_cita_id = ?, disponible = 0 
+                     WHERE id = ? AND row_version = " . $rowVersionHex,
+                    [$createdId, $slotId]
+                );
 
                 if ($affected <= 0) {
-                    // No se pudo reservar el slot (otro proceso lo reservó)
+                    // El row_version cambió - otro proceso reservó el slot (conflicto de concurrencia)
                     DB::rollBack();
-                    throw new \Exception('El slot ya fue reservado');
+                    throw new \Exception('El slot ya fue reservado por otro paciente (conflicto de concurrencia)');
                 }
             }
 
