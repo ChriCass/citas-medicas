@@ -118,6 +118,10 @@ const initialAppointment = <?= json_encode([
   'date' => isset($cita['fecha']) ? date('Y-m-d', strtotime($cita['fecha'])) : ''
 ]) ?>;
 
+// Lista completa de doctores enviada desde el servidor; usada para reconstruir
+// el select y mostrar únicamente los doctores de la especialidad seleccionada.
+window.allDoctors = <?= json_encode($doctores ?? []) ?>;
+
 /**
  * Carga los slots desde la tabla slots_calendario (endpoint /slots_db)
  * y rellena el select de horas. Sólo se muestran slots no reservados
@@ -283,41 +287,51 @@ async function loadEspecialidades() {
 function filterDoctoresByEspecialidad() {
   const especialidadId = document.getElementById('especialidad_id').value;
   const doctorSel = document.getElementById('doctor_id');
-  const allOptions = doctorSel.querySelectorAll('option');
 
-  if (!especialidadId) {
-    // Mostrar todos los doctores
-    allOptions.forEach(opt => {
-      if (opt.value) opt.style.display = '';
-    });
-    return;
-  }
+  // Guardar selección previa para intentar preservarla
+  const prevSelected = doctorSel.value;
 
-  // Filtrar doctores por especialidad
-  allOptions.forEach(opt => {
-    if (!opt.value) {
-      opt.style.display = '';
-      return;
-    }
-    
-    const optEspecialidadId = opt.getAttribute('data-especialidad-id');
-    if (optEspecialidadId == especialidadId) {
-      opt.style.display = '';
-    } else {
-      opt.style.display = 'none';
-    }
+  // Reconstruir opciones a partir de `allDoctors`
+  doctorSel.innerHTML = '';
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = '— Selecciona un doctor —';
+  doctorSel.appendChild(defaultOption);
+
+  const docs = Array.isArray(window.allDoctors) ? window.allDoctors : [];
+  const filtered = docs.filter(d => {
+    if (!d) return false;
+    const eid = d.especialidad_id ?? d.especialidadId ?? 0;
+    return !especialidadId || String(eid) === String(especialidadId);
   });
 
-  // Resetear selección de doctor si no coincide con la especialidad
-  const selectedOption = doctorSel.selectedOptions[0];
-  if (selectedOption && selectedOption.value) {
-    const selectedEspecialidadId = selectedOption.getAttribute('data-especialidad-id');
-    if (selectedEspecialidadId != especialidadId) {
-      doctorSel.value = '';
-      // Limpiar campos dependientes
-      document.getElementById('sede_id').innerHTML = '<option value="">— Selecciona una sede —</option>';
-      document.getElementById('time').innerHTML = '<option value="">— Selecciona una hora —</option>';
+  if (filtered.length === 0) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = 'Sin doctores disponibles para esta especialidad';
+    doctorSel.appendChild(o);
+    doctorSel.value = '';
+  } else {
+    filtered.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id;
+      const nombre = (d.user_nombre ?? '') + ' ' + (d.user_apellido ?? '');
+      o.textContent = nombre.trim() + (d.especialidad_nombre ? ' — ' + d.especialidad_nombre : '');
+      o.dataset.especialidadId = d.especialidad_id ?? d.especialidadId ?? '';
+      doctorSel.appendChild(o);
+    });
+
+    // Si la selección previa sigue estando disponible, preservarla
+    if (prevSelected) {
+      const opt = doctorSel.querySelector(`option[value="${prevSelected}"]`);
+      if (opt) doctorSel.value = prevSelected;
     }
+  }
+
+  // Si no hay doctor seleccionado limpiar dependientes
+  if (!doctorSel.value) {
+    document.getElementById('sede_id').innerHTML = '<option value="">— Selecciona una sede —</option>';
+    document.getElementById('time').innerHTML = '<option value="">— Selecciona una hora —</option>';
   }
 }
 
@@ -557,10 +571,33 @@ window.addEventListener('DOMContentLoaded', async function(){
     }
   } catch(e) { console.error('init prefills', e); }
 
-  // Cargar sedes/fechas/slots (no recargamos especialidades porque están renderizadas desde servidor)
-  await loadSedes();
-  await loadDates();
-  loadSlots();
+  // Flujo de carga inicial:
+  // 1) Filtrar y construir select de doctores según la especialidad seleccionada
+  // 2) Preseleccionar el doctor del registro (si existe)
+  // 3) Cargar sedes del doctor y preseleccionar la sede del registro
+  // 4) Cargar fechas disponibles y poner la fecha del registro
+  // 5) Cargar los slots/hora disponibles y preseleccionar la hora del registro
+  try {
+    // Filtrar doctores por la especialidad actual
+    filterDoctoresByEspecialidad();
+
+    // Intentar preseleccionar el doctor del registro si está disponible
+    try {
+      const doctorSel = document.getElementById('doctor_id');
+      if (initialAppointment && initialAppointment.doctor_id) {
+        const as = String(initialAppointment.doctor_id);
+        const opt = doctorSel.querySelector(`option[value="${as}"]`);
+        if (opt) doctorSel.value = as;
+      }
+    } catch(e) { console.error('preselect doctor error', e); }
+
+    // Cargar sedes, fechas y slots en orden
+    await loadSedes();
+    await loadDates();
+    await loadSlots();
+  } catch(e) {
+    console.error('Error en carga inicial ordenada:', e);
+  }
 });
 
 // Función para validar formulario de cita con SweetAlert2

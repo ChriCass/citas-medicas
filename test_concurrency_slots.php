@@ -151,8 +151,10 @@ class ConcurrencySlotTest {
      * Test 1: Simulación de reserva secuencial (sin concurrencia real)
      * Intenta que el paciente 1 reserve, luego el paciente 2 intente el mismo slot
      */
+    // Breve: Verifica que una reserva previa impida una reserva posterior en el mismo slot
     public function testSequentialReservation() {
         $this->log("\n" . TestColors::BOLD . "--- TEST 1: Reserva Secuencial (Control) ---" . TestColors::RESET, 'info');
+        $this->log("Dos pacientes reservando el mismo slot de forma secuencial (control).", 'info');
         
         $data = $this->prepareTestData();
         if (!$data) {
@@ -234,8 +236,10 @@ class ConcurrencySlotTest {
     /**
      * Test 2: Simulación de concurrencia usando procesos paralelos
      */
+    // Breve: Dos procesos paralelos intentan crear una cita en el mismo slot; sólo uno debe ganar
     public function testConcurrentReservation() {
         $this->log("\n" . TestColors::BOLD . "--- TEST 2: Reserva Concurrente (Procesos Paralelos) ---" . TestColors::RESET, 'info');
+        $this->log("Dos pacientes reservando el mismo slot simultáneamente", 'info');
         
         $data = $this->prepareTestData();
         if (!$data) {
@@ -263,46 +267,46 @@ class ConcurrencySlotTest {
         // Crear un script PHP temporal que será ejecutado en paralelo
         $workerScript = __DIR__ . '/test_concurrency_worker.php';
         $workerCode = <<<'PHP'
-<?php
-// Worker script para test de concurrencia
-require_once __DIR__ . '/vendor/autoload.php';
+        <?php
+        // Worker script para test de concurrencia
+        require_once __DIR__ . '/vendor/autoload.php';
 
-use App\Core\{Env, Eloquent};
-use App\Models\Appointment;
+        use App\Core\{Env, Eloquent};
+        use App\Models\Appointment;
 
-Env::load(__DIR__ . '/.env');
-Eloquent::init();
+        Env::load(__DIR__ . '/.env');
+        Eloquent::init();
 
-// Obtener argumentos
-$pacienteId = (int)$argv[1];
-$doctorId = (int)$argv[2];
-$sedeId = (int)$argv[3];
-$calendarioId = (int)$argv[4];
-$slotHora = $argv[5];
-$fecha = $argv[6];
-$pacienteNombre = $argv[7];
+        // Obtener argumentos
+        $pacienteId = (int)$argv[1];
+        $doctorId = (int)$argv[2];
+        $sedeId = (int)$argv[3];
+        $calendarioId = (int)$argv[4];
+        $slotHora = $argv[5];
+        $fecha = $argv[6];
+        $pacienteNombre = $argv[7];
 
-try {
-    $horaInicio = $slotHora . ':00';
-    $horaFin = date('H:i:s', strtotime($horaInicio . ' +15 minutes'));
-    
-    $citaId = Appointment::create(
-        $pacienteId,
-        $doctorId,
-        $sedeId,
-        $fecha,
-        $horaInicio,
-        $horaFin,
-        'Consulta test concurrencia',
-        $calendarioId,
-        $slotHora
-    );
-    
-    echo json_encode(['success' => true, 'citaId' => $citaId, 'paciente' => $pacienteNombre]);
-} catch (\Exception $e) {
-    echo json_encode(['success' => false, 'error' => $e->getMessage(), 'paciente' => $pacienteNombre]);
-}
-PHP;
+        try {
+            $horaInicio = $slotHora . ':00';
+            $horaFin = date('H:i:s', strtotime($horaInicio . ' +15 minutes'));
+            
+            $citaId = Appointment::create(
+                $pacienteId,
+                $doctorId,
+                $sedeId,
+                $fecha,
+                $horaInicio,
+                $horaFin,
+                'Consulta test concurrencia',
+                $calendarioId,
+                $slotHora
+            );
+            
+            echo json_encode(['success' => true, 'citaId' => $citaId, 'paciente' => $pacienteNombre]);
+        } catch (\Exception $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage(), 'paciente' => $pacienteNombre]);
+        }
+        PHP;
         
         file_put_contents($workerScript, $workerCode);
         
@@ -444,6 +448,494 @@ PHP;
     }
     
     /**
+     * Test 3: Dos usuarios moviendo sus citas al mismo slot disponible
+     * Simula concurrencia en modifyAppointment
+     */
+    // Breve: Dos modifies concurrentes intentan mover distintas citas al mismo slot; sólo una debe tener éxito
+    public function testConcurrentModifyToSameSlot() {
+        $this->log("\n" . TestColors::BOLD . "--- TEST 3: Dos Modify Concurrentes al Mismo Slot ---" . TestColors::RESET, 'info');
+        $this->log("Dos usuarios intentando mover sus citas al mismo slot disponible", 'info');
+        
+        $data = $this->prepareTestData();
+        if (!$data) {
+            return false;
+        }
+        
+        $paciente1 = $data['paciente1'];
+        $paciente2 = $data['paciente2'];
+        $doctor = $data['doctor'];
+        $sede = $data['sede'];
+        
+        // Buscar un calendario con al menos 3 slots disponibles del mismo doctor
+        $calendarioId = DB::table('calendario')
+            ->select('calendario.id')
+            ->join('slots_calendario', 'calendario.id', '=', 'slots_calendario.calendario_id')
+            ->whereNull('slots_calendario.reservado_por_cita_id')
+            ->where('slots_calendario.disponible', 1)
+            ->where('calendario.doctor_id', $doctor->id)
+            ->where('calendario.fecha', '>=', date('Y-m-d'))
+            ->groupBy('calendario.id')
+            ->havingRaw('COUNT(*) >= 3')
+            ->value('calendario.id');
+        
+        if (!$calendarioId) {
+            $this->log("✗ No se encontró un calendario con 3+ slots disponibles", 'error');
+            return false;
+        }
+        
+        $calendario = DB::table('calendario')->where('id', $calendarioId)->first();
+        
+        // Obtener 3 slots del mismo calendario
+        $slots = DB::table('slots_calendario')
+            ->where('calendario_id', $calendarioId)
+            ->whereNull('reservado_por_cita_id')
+            ->where('disponible', 1)
+            ->limit(3)
+            ->get();
+        
+        if ($slots->count() < 3) {
+            $this->log("✗ No se encontraron 3 slots disponibles", 'error');
+            return false;
+        }
+        
+        $slot1 = $slots[0];
+        $slot2 = $slots[1];
+        $slotDestino = $slots[2];
+        
+        // Crear dos citas en slots diferentes
+        $this->log("\nCreando cita 1 para paciente 1 en slot {$slot1->id}...", 'info');
+        $citaId1 = Appointment::create(
+            $paciente1->id,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            substr($slot1->hora_inicio, 0, 8),
+            date('H:i:s', strtotime(substr($slot1->hora_inicio, 0, 8) . ' +15 minutes')),
+            'Cita test 1',
+            $slot1->calendario_id,
+            substr($slot1->hora_inicio, 0, 5)
+        );
+        $this->log("✓ Cita 1 creada: ID=$citaId1", 'success');
+        
+        $this->log("Creando cita 2 para paciente 2 en slot {$slot2->id}...", 'info');
+        $citaId2 = Appointment::create(
+            $paciente2->id,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            substr($slot2->hora_inicio, 0, 8),
+            date('H:i:s', strtotime(substr($slot2->hora_inicio, 0, 8) . ' +15 minutes')),
+            'Cita test 2',
+            $slot2->calendario_id,
+            substr($slot2->hora_inicio, 0, 5)
+        );
+        $this->log("✓ Cita 2 creada: ID=$citaId2", 'success');
+        
+        $this->log("\nAmbas citas intentarán moverse al slot destino: {$slotDestino->id}", 'info');
+        
+        // Crear worker script para modifyAppointment
+        $workerScript = __DIR__ . '/test_modify_worker.php';
+        $workerCode = <<<'PHP'
+<?php
+require_once __DIR__ . '/vendor/autoload.php';
+
+use App\Core\{Env, Eloquent};
+use App\Models\Appointment;
+
+Env::load(__DIR__ . '/.env');
+Eloquent::init();
+
+$citaId = (int)$argv[1];
+$doctorId = (int)$argv[2];
+$sedeId = (int)$argv[3];
+$fecha = $argv[4];
+$horaInicio = $argv[5];
+$horaFin = $argv[6];
+$razon = $argv[7];
+$calendarioId = (int)$argv[8];
+$slotId = (int)$argv[9];
+$pacienteNombre = $argv[10];
+
+try {
+    $result = Appointment::modifyAppointment(
+        $citaId,
+        $doctorId,
+        $sedeId,
+        $fecha,
+        $horaInicio,
+        $horaFin,
+        $razon,
+        $calendarioId,
+        $slotId
+    );
+    
+    echo json_encode(['success' => $result, 'citaId' => $citaId, 'paciente' => $pacienteNombre]);
+} catch (\Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage(), 'citaId' => $citaId, 'paciente' => $pacienteNombre]);
+}
+PHP;
+        
+        file_put_contents($workerScript, $workerCode);
+        
+        $horaDestinoInicio = substr($slotDestino->hora_inicio, 0, 8);
+        $horaDestinoFin = date('H:i:s', strtotime($horaDestinoInicio . ' +15 minutes'));
+        
+        // Comandos para modificar ambas citas al mismo slot destino
+        $cmd1 = sprintf(
+            'php %s %d %d %d "%s" "%s" "%s" "Modificado" %d %d "%s"',
+            escapeshellarg($workerScript),
+            $citaId1,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            $horaDestinoInicio,
+            $horaDestinoFin,
+            $slotDestino->calendario_id,
+            $slotDestino->id,
+            $paciente1->user->nombre
+        );
+        
+        $cmd2 = sprintf(
+            'php %s %d %d %d "%s" "%s" "%s" "Modificado" %d %d "%s"',
+            escapeshellarg($workerScript),
+            $citaId2,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            $horaDestinoInicio,
+            $horaDestinoFin,
+            $slotDestino->calendario_id,
+            $slotDestino->id,
+            $paciente2->user->nombre
+        );
+        
+        $this->log("\nLanzando 2 procesos de modify simultáneos...", 'info');
+        
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w']
+        ];
+        
+        $process1 = proc_open($cmd1, $descriptors, $pipes1);
+        $process2 = proc_open($cmd2, $descriptors, $pipes2);
+        
+        if (!is_resource($process1) || !is_resource($process2)) {
+            $this->log("✗ Error al crear los procesos", 'error');
+            return false;
+        }
+        
+        $output1 = stream_get_contents($pipes1[1]);
+        $output2 = stream_get_contents($pipes2[1]);
+        
+        fclose($pipes1[0]); fclose($pipes1[1]); fclose($pipes1[2]);
+        fclose($pipes2[0]); fclose($pipes2[1]); fclose($pipes2[2]);
+        
+        proc_close($process1);
+        proc_close($process2);
+        
+        $result1 = json_decode($output1, true);
+        $result2 = json_decode($output2, true);
+        
+        $this->log("\n--- Resultados de procesos concurrentes ---", 'info');
+        
+        if ($result1) {
+            if ($result1['success']) {
+                $this->log("Proceso 1 (Cita $citaId1): ✓ ÉXITO", 'success');
+            } else {
+                $this->log("Proceso 1 (Cita $citaId1): ✗ RECHAZADO - " . ($result1['error'] ?? 'sin error'), 'warning');
+            }
+        }
+        
+        if ($result2) {
+            if ($result2['success']) {
+                $this->log("Proceso 2 (Cita $citaId2): ✓ ÉXITO", 'success');
+            } else {
+                $this->log("Proceso 2 (Cita $citaId2): ✗ RECHAZADO - " . ($result2['error'] ?? 'sin error'), 'warning');
+            }
+        }
+        
+        $successCount = (($result1 && $result1['success']) ? 1 : 0) + (($result2 && $result2['success']) ? 1 : 0);
+        
+        $this->log("\n--- Análisis de Concurrencia ---", 'info');
+        $this->log("Modificaciones exitosas: $successCount", 'info');
+        
+        $testPassed = ($successCount == 1);
+        
+        if ($successCount == 1) {
+            $this->log("\n✓ ¡BLOQUEO OPTIMISTA FUNCIONÓ!", 'success');
+            $this->log("Solo una cita pudo moverse al slot destino", 'success');
+        } else if ($successCount == 2) {
+            $this->log("\n✗ ERROR: Ambas citas se movieron al mismo slot", 'error');
+        } else {
+            $this->log("\n✗ ERROR: Ninguna cita pudo moverse", 'error');
+        }
+        
+        // Limpieza
+        DB::table('citas')->whereIn('id', [$citaId1, $citaId2])->delete();
+        DB::table('slots_calendario')
+            ->whereIn('id', [$slot1->id, $slot2->id, $slotDestino->id])
+            ->update(['reservado_por_cita_id' => null, 'disponible' => 1]);
+        
+        if (file_exists($workerScript)) {
+            unlink($workerScript);
+        }
+        
+        $this->log("✓ Limpieza completada", 'info');
+        
+        return $testPassed;
+    }
+    
+    /**
+     * Test 4: Un paciente reserva (create) mientras otro modifica su cita al mismo slot
+     */
+    // Breve: Un create y un modify compiten por el mismo slot; sólo una operación debe reservarlo
+    public function testCreateVsModifyToSameSlot() {
+        $this->log("\n" . TestColors::BOLD . "--- TEST 4: Create vs Modify al Mismo Slot ---" . TestColors::RESET, 'info');
+        $this->log("Un paciente reserva mientras otro modifica su cita al mismo slot", 'info');
+        
+        $data = $this->prepareTestData();
+        if (!$data) {
+            return false;
+        }
+        
+        $paciente1 = $data['paciente1'];
+        $paciente2 = $data['paciente2'];
+        $doctor = $data['doctor'];
+        $sede = $data['sede'];
+        
+        // Buscar un calendario con al menos 2 slots disponibles
+        $calendarioId = DB::table('calendario')
+            ->select('calendario.id')
+            ->join('slots_calendario', 'calendario.id', '=', 'slots_calendario.calendario_id')
+            ->whereNull('slots_calendario.reservado_por_cita_id')
+            ->where('slots_calendario.disponible', 1)
+            ->where('calendario.doctor_id', $doctor->id)
+            ->where('calendario.fecha', '>=', date('Y-m-d'))
+            ->groupBy('calendario.id')
+            ->havingRaw('COUNT(*) >= 2')
+            ->value('calendario.id');
+        
+        if (!$calendarioId) {
+            $this->log("✗ No se encontró un calendario con 2+ slots disponibles", 'error');
+            return false;
+        }
+        
+        $calendario = DB::table('calendario')->where('id', $calendarioId)->first();
+        
+        // Obtener 2 slots del mismo calendario
+        $slots = DB::table('slots_calendario')
+            ->where('calendario_id', $calendarioId)
+            ->whereNull('reservado_por_cita_id')
+            ->where('disponible', 1)
+            ->limit(2)
+            ->get();
+        
+        if ($slots->count() < 2) {
+            $this->log("✗ No se encontraron 2 slots disponibles", 'error');
+            return false;
+        }
+        
+        $slotInicial = $slots[0];
+        $slotDestino = $slots[1];
+        
+        // Crear cita inicial para paciente2
+        $this->log("\nCreando cita inicial para paciente 2 en slot {$slotInicial->id}...", 'info');
+        $citaId2 = Appointment::create(
+            $paciente2->id,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            substr($slotInicial->hora_inicio, 0, 8),
+            date('H:i:s', strtotime(substr($slotInicial->hora_inicio, 0, 8) . ' +15 minutes')),
+            'Cita inicial paciente 2',
+            $slotInicial->calendario_id,
+            substr($slotInicial->hora_inicio, 0, 5)
+        );
+        $this->log("✓ Cita creada: ID=$citaId2", 'success');
+        
+        $this->log("\nSlot destino disputado: {$slotDestino->id}", 'info');
+        $this->log("Paciente 1 intentará CREATE nuevo, Paciente 2 intentará MODIFY existente", 'info');
+        
+        // Worker para create
+        $createWorkerScript = __DIR__ . '/test_create_worker.php';
+        $createWorkerCode = <<<'PHP'
+<?php
+require_once __DIR__ . '/vendor/autoload.php';
+use App\Core\{Env, Eloquent};
+use App\Models\Appointment;
+
+Env::load(__DIR__ . '/.env');
+Eloquent::init();
+
+$pacienteId = (int)$argv[1];
+$doctorId = (int)$argv[2];
+$sedeId = (int)$argv[3];
+$fecha = $argv[4];
+$horaInicio = $argv[5];
+$horaFin = $argv[6];
+$calendarioId = (int)$argv[7];
+$slotHora = $argv[8];
+$nombre = $argv[9];
+
+try {
+    $citaId = Appointment::create($pacienteId, $doctorId, $sedeId, $fecha, $horaInicio, $horaFin, 'Nueva cita test', $calendarioId, $slotHora);
+    echo json_encode(['success' => true, 'citaId' => $citaId, 'tipo' => 'CREATE', 'nombre' => $nombre]);
+} catch (\Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage(), 'tipo' => 'CREATE', 'nombre' => $nombre]);
+}
+PHP;
+        
+        // Worker para modify (reutilizar del test anterior)
+        $modifyWorkerScript = __DIR__ . '/test_modify_worker2.php';
+        $modifyWorkerCode = <<<'PHP'
+<?php
+require_once __DIR__ . '/vendor/autoload.php';
+use App\Core\{Env, Eloquent};
+use App\Models\Appointment;
+
+Env::load(__DIR__ . '/.env');
+Eloquent::init();
+
+$citaId = (int)$argv[1];
+$doctorId = (int)$argv[2];
+$sedeId = (int)$argv[3];
+$fecha = $argv[4];
+$horaInicio = $argv[5];
+$horaFin = $argv[6];
+$razon = $argv[7];
+$calendarioId = (int)$argv[8];
+$slotId = (int)$argv[9];
+$nombre = $argv[10];
+
+try {
+    $result = Appointment::modifyAppointment($citaId, $doctorId, $sedeId, $fecha, $horaInicio, $horaFin, $razon, $calendarioId, $slotId);
+    echo json_encode(['success' => $result, 'citaId' => $citaId, 'tipo' => 'MODIFY', 'nombre' => $nombre]);
+} catch (\Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage(), 'tipo' => 'MODIFY', 'nombre' => $nombre]);
+}
+PHP;
+        
+        file_put_contents($createWorkerScript, $createWorkerCode);
+        file_put_contents($modifyWorkerScript, $modifyWorkerCode);
+        
+        $horaDestinoInicio = substr($slotDestino->hora_inicio, 0, 8);
+        $horaDestinoFin = date('H:i:s', strtotime($horaDestinoInicio . ' +15 minutes'));
+        $slotHora = substr($slotDestino->hora_inicio, 0, 5);
+        
+        // Comando para CREATE
+        $cmdCreate = sprintf(
+            'php %s %d %d %d "%s" "%s" "%s" %d "%s" "%s"',
+            escapeshellarg($createWorkerScript),
+            $paciente1->id,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            $horaDestinoInicio,
+            $horaDestinoFin,
+            $slotDestino->calendario_id,
+            $slotHora,
+            $paciente1->user->nombre
+        );
+        
+        // Comando para MODIFY
+        $cmdModify = sprintf(
+            'php %s %d %d %d "%s" "%s" "%s" "Modificado" %d %d "%s"',
+            escapeshellarg($modifyWorkerScript),
+            $citaId2,
+            $doctor->id,
+            $sede->id,
+            $calendario->fecha,
+            $horaDestinoInicio,
+            $horaDestinoFin,
+            $slotDestino->calendario_id,
+            $slotDestino->id,
+            $paciente2->user->nombre
+        );
+        
+        $this->log("\nLanzando CREATE + MODIFY simultáneos...", 'info');
+        
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w']
+        ];
+        
+        $processCreate = proc_open($cmdCreate, $descriptors, $pipesCreate);
+        $processModify = proc_open($cmdModify, $descriptors, $pipesModify);
+        
+        if (!is_resource($processCreate) || !is_resource($processModify)) {
+            $this->log("✗ Error al crear los procesos", 'error');
+            return false;
+        }
+        
+        $outputCreate = stream_get_contents($pipesCreate[1]);
+        $outputModify = stream_get_contents($pipesModify[1]);
+        
+        fclose($pipesCreate[0]); fclose($pipesCreate[1]); fclose($pipesCreate[2]);
+        fclose($pipesModify[0]); fclose($pipesModify[1]); fclose($pipesModify[2]);
+        
+        proc_close($processCreate);
+        proc_close($processModify);
+        
+        $resultCreate = json_decode($outputCreate, true);
+        $resultModify = json_decode($outputModify, true);
+        
+        $this->log("\n--- Resultados de procesos concurrentes ---", 'info');
+        
+        $createdCitaId = null;
+        if ($resultCreate) {
+            if ($resultCreate['success']) {
+                $this->log("CREATE ({$resultCreate['nombre']}): ✓ ÉXITO - Cita ID: {$resultCreate['citaId']}", 'success');
+                $createdCitaId = $resultCreate['citaId'];
+            } else {
+                $this->log("CREATE ({$resultCreate['nombre']}): ✗ RECHAZADO - " . ($resultCreate['error'] ?? 'sin error'), 'warning');
+            }
+        }
+        
+        if ($resultModify) {
+            if ($resultModify['success']) {
+                $this->log("MODIFY ({$resultModify['nombre']}): ✓ ÉXITO - Cita ID: {$resultModify['citaId']}", 'success');
+            } else {
+                $this->log("MODIFY ({$resultModify['nombre']}): ✗ RECHAZADO - " . ($resultModify['error'] ?? 'sin error'), 'warning');
+            }
+        }
+        
+        $successCount = (($resultCreate && $resultCreate['success']) ? 1 : 0) + (($resultModify && $resultModify['success']) ? 1 : 0);
+        
+        $this->log("\n--- Análisis de Concurrencia ---", 'info');
+        $this->log("Operaciones exitosas: $successCount", 'info');
+        
+        $testPassed = ($successCount == 1);
+        
+        if ($successCount == 1) {
+            $this->log("\n✓ ¡BLOQUEO OPTIMISTA FUNCIONÓ!", 'success');
+            $this->log("Solo una operación obtuvo el slot destino", 'success');
+        } else if ($successCount == 2) {
+            $this->log("\n✗ ERROR: Ambas operaciones obtuvieron el mismo slot", 'error');
+        } else {
+            $this->log("\n✗ ERROR: Ninguna operación obtuvo el slot", 'error');
+        }
+        
+        // Limpieza
+        $citasToDelete = [$citaId2];
+        if ($createdCitaId) {
+            $citasToDelete[] = $createdCitaId;
+        }
+        DB::table('citas')->whereIn('id', $citasToDelete)->delete();
+        DB::table('slots_calendario')
+            ->whereIn('id', [$slotInicial->id, $slotDestino->id])
+            ->update(['reservado_por_cita_id' => null, 'disponible' => 1]);
+        
+        if (file_exists($createWorkerScript)) unlink($createWorkerScript);
+        if (file_exists($modifyWorkerScript)) unlink($modifyWorkerScript);
+        
+        $this->log("✓ Limpieza completada", 'info');
+        
+        return $testPassed;
+    }
+    
+    /**
      * Ejecutar todos los tests
      */
     public function runAll() {
@@ -456,11 +948,21 @@ PHP;
         $test2 = $this->testConcurrentReservation();
         
         $this->log("\n" . str_repeat("=", 60), 'info');
-        $this->log("\n" . TestColors::BOLD . "RESUMEN FINAL:" . TestColors::RESET, 'info');
-        $this->log("Test 1 (Secuencial): " . ($test1 ? "✓ PASÓ" : "✗ FALLÓ"), $test1 ? 'success' : 'error');
-        $this->log("Test 2 (Concurrente): " . ($test2 ? "✓ PASÓ" : "✗ FALLÓ"), $test2 ? 'success' : 'error');
         
-        if ($test1 && $test2) {
+        $test3 = $this->testConcurrentModifyToSameSlot();
+        
+        $this->log("\n" . str_repeat("=", 60), 'info');
+        
+        $test4 = $this->testCreateVsModifyToSameSlot();
+        
+        $this->log("\n" . str_repeat("=", 60), 'info');
+        $this->log("\n" . TestColors::BOLD . "RESUMEN FINAL:" . TestColors::RESET, 'info');
+        $this->log("Test 1 (Secuencial - Create): " . ($test1 ? "✓ PASÓ" : "✗ FALLÓ"), $test1 ? 'success' : 'error');
+        $this->log("Test 2 (Concurrente - Create vs Create): " . ($test2 ? "✓ PASÓ" : "✗ FALLÓ"), $test2 ? 'success' : 'error');
+        $this->log("Test 3 (Concurrente - Modify vs Modify): " . ($test3 ? "✓ PASÓ" : "✗ FALLÓ"), $test3 ? 'success' : 'error');
+        $this->log("Test 4 (Concurrente - Create vs Modify): " . ($test4 ? "✓ PASÓ" : "✗ FALLÓ"), $test4 ? 'success' : 'error');
+        
+        if ($test1 && $test2 && $test3 && $test4) {
             $this->log("\n" . TestColors::BOLD . TestColors::GREEN . "¡TODOS LOS TESTS PASARON!" . TestColors::RESET, 'success');
         } else {
             $this->log("\n" . TestColors::BOLD . TestColors::RED . "ALGUNOS TESTS FALLARON" . TestColors::RESET, 'error');

@@ -85,7 +85,6 @@ Icon?
 # =====================================
 
 # Visual Studio Code
-.vscode/
 *.code-workspace
 
 # PhpStorm
@@ -265,3 +264,6 @@ nginx.conf.backup
 # Para ignorar todo excepto algunos archivos en un directorio:
 # directorio/*
 # !directorio/archivo_importante.txt
+temp_auto_push.bat
+temp_interactive_push.bat
+branch_structure.json
